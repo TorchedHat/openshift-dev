@@ -1,0 +1,43 @@
+{
+	"name": "MVP sampark dev",
+	"build": {
+		"context": "..",
+		"dockerfile": "Dockerfile"
+	},
+	"postCreateCommand": "echo source /workspace/pytorch/tools/gdb/pytorch-gdb.py | tee ~/.gdbinit && pip install -r /workspace/pytorch/requirements.txt",
+	"mounts": [
+		"source=${env:HOME}/.gitconfig,target=/root/.gitconfig,type=bind,consistency=cached",
+		"source=/mnt/podman_storage/sampark/tmpdir/outputs,target=/mnt/outputs,type=bind,consistency=cached"
+	],
+	"workspaceMount": "source=/mnt/podman_storage/sampark/tmpdir/pytorch,target=/workspace/pytorch,type=bind,consistency=delegated",
+	"workspaceFolder": "/workspace/pytorch",
+	"runArgs": [
+		"--name",
+		"sampark-dev",
+		"--device=nvidia.com/gpu=4",
+		"--device=nvidia.com/gpu=5",
+		"--device=nvidia.com/gpu=6",
+		"--device=nvidia.com/gpu=7",
+		// "--device=nvidia.com/gpu=all",
+		"--security-opt=label=disable"
+	],
+	"remoteEnv": {
+		"PATH": "${containerEnv:PATH}:/root/.npm-global/bin"
+	},
+	"containerEnv": {
+		"CC": "gcc-13",
+		"CXX": "g++-13",
+		"MAX_JOBS": "25",
+		"CMAKE_PREFIX_PATH": "/miniconda",
+		"NVCC_CCBIN": "g++-13"
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"benjamin-simmonds.pythoncpp-debug",
+				"ms-vscode.cpptools-extension-pack"
+			]
+		}
+	}
+}
