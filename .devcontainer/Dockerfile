@@ -17,7 +17,6 @@ USER root
 
 # Add google cloud cli repo
 COPY google-cloud-sdk.repo /etc/yum.repos.d
-RUN dnf copr enable vbatts/bazel
 
 RUN dnf upgrade --refresh -y && \
     dnf install -y \
@@ -42,8 +41,7 @@ RUN dnf upgrade --refresh -y && \
         libxcrypt-compat.x86_64 \
         google-cloud-cli \
         tmux \
-        tar \
-        bazel4 && \
+        tar && \
     dnf clean all
 
 RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo && dnf install gh --repo gh-cli
@@ -121,7 +119,14 @@ COPY pytorch/.ci/docker/ci_commit_pins/triton.txt /pytorch/.ci/docker/ci_commit_
 RUN cd /pytorch && make triton
 
 # Install Ray
-RUN cd /workspace/ray/python && pip install -r requirements.txt
+RUN cd /workspace/ray/python\
+ && pip install -r requirements.txt\
+ -r requirements/test-requirements.txt\
+ -c requirements_compiled.txt pre-commit\
+ && pre-commit install
+RUN curl -fLO "https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-installer-linux-x86_64.sh"\
+ && chmod +x bazel-6.5.0-installer-linux-x86_64.sh\
+ && ./bazel-6.5.0-installer-linux-x86_64.sh
 
 # Forcefully remove old symlinks if they exist and are not managed
 RUN rm -f /usr/bin/gcc /usr/bin/g++ && \
