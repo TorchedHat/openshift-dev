@@ -1,0 +1,34 @@
+{
+    "folders": [
+        {
+            "name": "pytorch",
+            "path": "../pytorch",
+            "settings": {
+                "python.defaultInterpreterPath": "/miniconda/bin/python3"
+            }
+        },
+        {
+            "name": "devspark",
+            "path": "../devspark",
+            "settings": {
+                "python.defaultInterpreterPath": "/miniconda/bin/python3",
+                    "python.analysis.extraPaths": [
+                        "/workspace/pytorch_eco/pytorch",
+                        "/workspace/pytorch_eco/ray"
+                ]
+            }
+        },
+        {
+            "name": "ray",
+            "path": "../ray",
+            "settings": {
+                "python.defaultInterpreterPath": "/miniconda/bin/python3"
+            }
+        }
+    ],
+    "settings": {
+        // Optional global workspace settings
+        "git.detectSubmodules": false,
+        "git.detectSubmodulesLimit": 0
+    }
+}

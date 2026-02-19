@@ -16,7 +16,13 @@ ARG FEDORA_VERSION
 USER root
 
 # Add google cloud cli repo
-COPY google-cloud-sdk.repo /etc/yum.repos.d
+RUN printf "[google-cloud-cli]\n\
+name=Google Cloud CLI\n\
+baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el9-x86_64\n\
+enabled=1\n\
+gpgcheck=1\n\
+repo_gpgcheck=0\n\
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/yum.repos.d/google-cloud-sdk.repo
 
 RUN dnf upgrade --refresh -y && \
     dnf install -y \
@@ -36,32 +42,24 @@ RUN dnf upgrade --refresh -y && \
         unzip \
         which \
         libffi-devel \
+        google-cloud-cli \
         openssl-devel \
         findutils \
         libxcrypt-compat.x86_64 \
-        google-cloud-cli \
         tmux \
-        tar && \
+        tar \
+        htop && \
     dnf clean all
 
-RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo && dnf install gh --repo gh-cli
-
-COPY itpc-gcp-ai-eng-claude-17b7e011d1db.json /root
-RUN gcloud auth activate-service-account --key-file=/root/itpc-gcp-ai-eng-claude-17b7e011d1db.json && gcloud config set project itpc-gcp-ai-eng-claude && gcloud config set compute/region us-east5
+RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo && dnf install gh --repo gh-cli -y 
 
 RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
-
-# get claude code setup
-ENV CLAUDE_CODE_USE_VERTEX=1
-ENV CLOUD_ML_REGION=us-east5
-ENV ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude
 
 #Install gcc c++ this may be subject to change for new versions, so keep it separte for easier debugging. This also installs gcc
 RUN dnf install -y gcc13-c++-13.3.1-2.fc${FEDORA_VERSION}.1
 # fedora 41 does not link gcc and g++ for version 13 manually add it.
 RUN alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100
 RUN alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
-
 
 # #Install Cuda Toolkit for fedora 41
 RUN mkdir ./cuda-toolkit
@@ -78,13 +76,11 @@ RUN cd ./cuda-toolkit && rm ./cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x
 # #update path to include nvcc
 # RUN export PATH=${PATH}:/usr/local/cuda-12.9/bin
 
-ENV NVCC_CCBIN=g++-13
-ENV PATH="/usr/local/cuda-12.9/bin:${PATH}"
-
 #Install cudnn
 RUN mkdir ./cudnn
-COPY cudnn-linux-x86_64-9.6.0.74_cuda12-archive cudnn/cudnn-linux-x86_64-9.6.0.74_cuda12-archive
 RUN cd cudnn \
+    && wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.6.0.74_cuda12-archive.tar.xz \
+    && tar xvf cudnn-linux-x86_64-9.6.0.74_cuda12-archive.tar.xz \
     && mv ./cudnn-linux-x86_64-9.6.0.74_cuda12-archive/include/* /usr/local/cuda/include \
     && mv ./cudnn-linux-x86_64-9.6.0.74_cuda12-archive/lib/* /usr/local/cuda/lib64 \
     && cd .. && rm -r ./cudnn
@@ -105,8 +101,7 @@ RUN conda install -c anaconda -y python=${PY_VER}
 #Install torch requirements.
 RUN mkdir /pytorch
 COPY ./pytorch/requirements.txt pytorch/requirements-build.txt /pytorch/
-RUN pip install -r /pytorch/requirements.txt 
-RUN pip install mkl-static mkl-include
+RUN /miniconda/bin/pip install -r /pytorch/requirements.txt mkl-static mkl-include
 COPY ./pytorch/Makefile /pytorch/
 
 #Install triton.
@@ -119,16 +114,39 @@ COPY pytorch/.ci/docker/ci_commit_pins/triton.txt /pytorch/.ci/docker/ci_commit_
 RUN cd /pytorch && make triton
 
 # Install Ray
-RUN cd /workspace/ray/python\
- && pip install -r requirements.txt\
- -r requirements/test-requirements.txt\
- -c requirements_compiled.txt pre-commit\
- && pre-commit install
+RUN mkdir /ray
+COPY ray/python/requirements.txt ray/python/requirements/test-requirements.txt ray/python/requirements_compiled.txt /ray/
+RUN cd /ray\
+    && sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt\
+    && sed -i '/tensordict/d' test-requirements.txt\
+    && /miniconda/bin/pip install -r requirements.txt\
+    -r test-requirements.txt\
+    pre-commit\
+    && /miniconda/bin/pip uninstall torch -y 2>/dev/null || true
 RUN curl -fLO "https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-installer-linux-x86_64.sh"\
- && chmod +x bazel-6.5.0-installer-linux-x86_64.sh\
- && ./bazel-6.5.0-installer-linux-x86_64.sh
+    && chmod +x bazel-6.5.0-installer-linux-x86_64.sh\
+    && ./bazel-6.5.0-installer-linux-x86_64.sh
+# set RAM and CPU limits for the ray build
+RUN echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25" >> /root/.bazelrc
+
+# install claude
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
 # Forcefully remove old symlinks if they exist and are not managed
 RUN rm -f /usr/bin/gcc /usr/bin/g++ && \
     ln -s /usr/bin/gcc-13 /usr/bin/gcc && \
     ln -s /usr/bin/g++-13 /usr/bin/g++
+
+# set env variables
+ENV CLAUDE_CODE_USE_VERTEX=1 \
+    CLOUD_ML_REGION=us-east5 \
+    ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude \
+    NVCC_CCBIN=g++-13 \
+    PATH="/usr/local/cuda-12.9/bin:${PATH}" \
+    CUDA_HOME=/usr/local/cuda-12.9 \
+    CC=gcc-13 \
+    CXX=g++-13 \
+    MAX_JOBS=25 \
+    CMAKE_PREFIX_PATH=/miniconda \
+    RAY_INSTALL_CPP=1 \
+    RAY_DEBUG_BUILD=debug
