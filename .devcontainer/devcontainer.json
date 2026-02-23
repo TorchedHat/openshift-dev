@@ -7,7 +7,8 @@
 	"postCreateCommand": "echo source /workspace/pytorch/tools/gdb/pytorch-gdb.py | tee ~/.gdbinit",
 	"mounts": [
 		"source=${env:HOME}/.gitconfig,target=/root/.gitconfig,type=bind,consistency=cached",
-		"source=/mnt/podman_storage/sampark/tmpdir/outputs,target=/mnt/outputs,type=bind,consistency=cached"
+		"source=/mnt/podman_storage/sampark/tmpdir/outputs,target=/mnt/outputs,type=bind,consistency=cached",
+		"source=${env:HOME}/.config/gcloud/application_default_credentials.json,target=/root/.config/gcloud/application_default_credentials.json,type=bind,readonly,consistency=cached"
 	],
 	"workspaceMount": "source=/mnt/podman_storage/sampark/tmpdir/devcontainers,target=/workspace/pytorch_eco,type=bind,consistency=delegated",
 	"workspaceFolder": "/workspace/pytorch_eco",
@@ -19,13 +20,11 @@
 		"--device=nvidia.com/gpu=6",
 		"--device=nvidia.com/gpu=7",
 		// "--device=nvidia.com/gpu=all",
-		"--security-opt=label=disable",
-		"--secret=google_adc"
+		"--security-opt=label=disable"
 	],
 	"remoteEnv": {
 	},
 	"containerEnv": {
-		"GOOGLE_APPLICATION_CREDENTIALS": "/run/secrets/google_adc"
 	},
 	"customizations": {
 		"vscode": {
