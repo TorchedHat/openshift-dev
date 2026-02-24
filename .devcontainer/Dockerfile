@@ -48,7 +48,8 @@ RUN dnf upgrade --refresh -y && \
         libxcrypt-compat.x86_64 \
         tmux \
         tar \
-        htop && \
+        htop \
+        nodejs && \
     dnf clean all
 
 RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo && dnf install gh --repo gh-cli -y 
@@ -96,7 +97,7 @@ ENV PATH=/miniconda/bin:${PATH}
 RUN conda update -y conda
 RUN conda init
 ARG PY_VER
-RUN conda install -c anaconda -y python=${PY_VER}
+RUN conda install -c anaconda -y python=${PY_VER} gdb cuda-gdb
 
 #Install torch requirements.
 RUN mkdir /pytorch
