@@ -20,7 +20,8 @@
 		"--device=nvidia.com/gpu=6",
 		"--device=nvidia.com/gpu=7",
 		// "--device=nvidia.com/gpu=all",
-		"--security-opt=label=disable"
+		"--security-opt=label=disable",
+		"--shm-size=12g"
 	],
 	"remoteEnv": {
 	},
