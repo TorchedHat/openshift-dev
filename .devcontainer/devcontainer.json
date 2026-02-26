@@ -22,7 +22,10 @@
 		// "--device=nvidia.com/gpu=all",
 		"--security-opt=label=disable",
 		"--shm-size=12g",
-		"--network=host"
+		"-p",
+		"8265:8265",
+		"--pids-limit",
+		"-1"
 	],
 	"remoteEnv": {
 	},

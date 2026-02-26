@@ -128,7 +128,7 @@ RUN curl -fLO "https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel
     && chmod +x bazel-6.5.0-installer-linux-x86_64.sh\
     && ./bazel-6.5.0-installer-linux-x86_64.sh
 # set RAM and CPU limits for the ray build
-RUN echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25" >> /root/.bazelrc
+RUN echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25 --disk_cache=~/bazel-cache" >> /root/.bazelrc
 
 # install claude
 RUN curl -fsSL https://claude.ai/install.sh | bash
