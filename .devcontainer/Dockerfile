@@ -1,11 +1,10 @@
 #Set Versions.
-ARG FEDORA_VERSION=41
 ARG OS_TYPE=x86_64
 ARG PY_VER=3.10
 ARG CONDA_VER=latest
 
 #Base image
-FROM quay.io/foundata/fedora${FEDORA_VERSION}-itt:latest
+FROM quay.io/foundata/fedora41-itt:latest
 
 # Use the above args 
 ARG CONDA_VER
