@@ -111,7 +111,7 @@ RUN /miniconda/bin/pip install -r /pytorch/requirements.txt mkl-static mkl-inclu
 #Install triton.
 RUN mkdir /pytorch/scripts
 ADD ${PYTORCH_RAW}/scripts/install_triton_wheel.sh /pytorch/scripts/install_triton_wheel.sh
-RUN mkdir -p /pytorch/.ci/docker/
+RUN chmod +x /pytorch/scripts/install_triton_wheel.sh && mkdir -p /pytorch/.ci/docker/
 ADD ${PYTORCH_RAW}/.ci/docker/triton_version.txt /pytorch/.ci/docker/triton_version.txt
 ADD ${PYTORCH_RAW}/.ci/docker/triton_xpu_version.txt /pytorch/.ci/docker/triton_xpu_version.txt
 RUN mkdir -p /pytorch/.ci/docker/ci_commit_pins/
