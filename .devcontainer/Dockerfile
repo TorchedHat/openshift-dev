@@ -2,9 +2,10 @@
 ARG OS_TYPE=x86_64
 ARG PY_VER=3.10
 ARG CONDA_VER=latest
+ARG FEDORA_VERSION=41
 
 #Base image
-FROM quay.io/foundata/fedora41-itt:latest
+FROM quay.io/foundata/fedora${FEDORA_VERSION}-itt:latest
 
 # Use the above args 
 ARG CONDA_VER
@@ -99,23 +100,33 @@ ARG PY_VER
 RUN conda install -c anaconda -y python=${PY_VER} gdb cuda-gdb
 
 #Install torch requirements.
+ARG PYTORCH_RAW=https://raw.githubusercontent.com/pytorch/pytorch/refs/heads/main
+
 RUN mkdir /pytorch
-COPY ./pytorch/requirements.txt pytorch/requirements-build.txt /pytorch/
+ADD ${PYTORCH_RAW}/requirements.txt /pytorch/requirements.txt
+ADD ${PYTORCH_RAW}/requirements-build.txt /pytorch/requirements-build.txt
+ADD ${PYTORCH_RAW}/Makefile /pytorch/Makefile
 RUN /miniconda/bin/pip install -r /pytorch/requirements.txt mkl-static mkl-include
-COPY ./pytorch/Makefile /pytorch/
 
 #Install triton.
 RUN mkdir /pytorch/scripts
-COPY pytorch/scripts/install_triton_wheel.sh /pytorch/scripts
+ADD ${PYTORCH_RAW}/scripts/install_triton_wheel.sh /pytorch/scripts/install_triton_wheel.sh
 RUN mkdir -p /pytorch/.ci/docker/
-COPY pytorch/.ci/docker/triton_version.txt /pytorch/.ci/docker/triton_xpu_version.txt /pytorch/.ci/docker/
+ADD ${PYTORCH_RAW}/.ci/docker/triton_version.txt /pytorch/.ci/docker/triton_version.txt
+ADD ${PYTORCH_RAW}/.ci/docker/triton_xpu_version.txt /pytorch/.ci/docker/triton_xpu_version.txt
 RUN mkdir -p /pytorch/.ci/docker/ci_commit_pins/
-COPY pytorch/.ci/docker/ci_commit_pins/triton.txt /pytorch/.ci/docker/ci_commit_pins/triton-xpu.txt /pytorch/.ci/docker/ci_commit_pins/
+ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton.txt /pytorch/.ci/docker/ci_commit_pins/triton.txt
+ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton-xpu.txt /pytorch/.ci/docker/ci_commit_pins/triton-xpu.txt
 RUN cd /pytorch && make triton
 
 # Install Ray
+ARG RAY_RAW=https://raw.githubusercontent.com/ray-project/ray/refs/heads/master
+
 RUN mkdir /ray
-COPY ray/python/requirements.txt ray/python/requirements/test-requirements.txt ray/python/requirements_compiled.txt /ray/
+ADD ${RAY_RAW}/python/requirements.txt /ray/requirements.txt
+ADD ${RAY_RAW}/python/requirements/test-requirements.txt /ray/test-requirements.txt
+ADD ${RAY_RAW}/python/requirements_compiled.txt /ray/requirements_compiled.txt
+
 RUN cd /ray\
     && sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt\
     && sed -i '/tensordict/d' test-requirements.txt\
