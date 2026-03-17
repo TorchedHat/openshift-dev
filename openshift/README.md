@@ -42,9 +42,9 @@ oc create secret generic $USERNAME-gcloud-config \
   --from-file=$HOME/.config/gcloud/application_default_credentials.json
 ```
 3. Apply Role and Role bindings so that user can access created secrets.<br>
-`oc apply -n alice-dev -f <(sed "s/<username>/alice/g" rbac.yml`
+`oc apply -n alice-dev -f <(sed "s/<username>/alice/g" rbac.yml)`
 4. Apply PVC to have persisent folder even if pods are destroyed.<br>
-`oc apply -n alice-dev -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml`
+`oc apply -n alice-dev -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml)`
 
 ## Users
 ### Kubeconfig
