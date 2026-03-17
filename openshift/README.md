@@ -1,9 +1,46 @@
-## Create github ssh key (needs to be done as admin)
-oc create secret generic <username>-git-ssh-key \
-  --namespace=default \                                                                                                                                                 
-  --from-file=ssh-privatekey=$HOME/.ssh/id_rsa \
-  --from-file=ssh-publickey=$HOME/.ssh/id_rsa.pub \
-  --from-file=known_hosts=<(ssh-keyscan github.com 2>/dev/null)
+# Getting started with Openshift
 
-Use sed command to replace username.
-oc apply -f <(sed 's/<username>/sampark/g' rbac.yaml)
+## Admin only
+### Adding Users
+Currently configuring user creation and credentials using htpasswd. 
+The command to generate an HTPasswd file is `htpasswd -c -B users.htpasswd alice` (for first time creation and this will generate a `users.htpasswd` file. 
+Then the following command for adding additional users, `htpasswd -B users.htpasswd bob`.
+
+1. Download the existing htpasswd file<br>
+`oc get secret htpass-secret -n openshift-config -o jsonpath='{.data.htpasswd}' | base64 -d > htpasswd`
+2. Add a new user<br>
+`htpasswd -B htpasswd newuser` # this will prompt for a password.
+3. Update the secret
+```
+oc create secret generic htpass-secret \
+  --from-file=htpasswd=htpasswd \
+  -n openshift-config \
+  --dry-run=client -o yaml | oc replace -f -
+```
+4. Verify the user can log in<br>
+`oc login -u newuser`
+
+#### Other useful commands
+```
+# Delete a user from htpasswd
+htpasswd -D htpasswd olduser
+
+# list current users
+cat htpasswd
+```
+
+### Adding secrets
+1. Run `create_git_secret.sh`
+2. Create openshift secret for the gcloud authentication json file for claude use.<br>
+```
+oc create secret generic $USERNAME-gcloud-config \
+  --from-file=$HOME/.config/gcloud/application_default_credentials.json
+```
+3. Apply Role and Role bindings so that user can access created secrets.<br>
+`oc apply -f <(sed "s/<username>/alice/g" rbac.yml`
+4. Apply PVC to have persisent folder even if pods are destroyed.<br>
+`oc apply -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml`
+
+## Users
+### Kubeconfig
+Download the kubeconfig file from Openshift and place it here and be sure to rename the kubeconfig to `config`: `$HOME/.kube/config`
