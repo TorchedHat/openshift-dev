@@ -48,4 +48,5 @@ oc create secret generic $USERNAME-gcloud-config \
 
 ## Users
 ### Kubeconfig
-Download the kubeconfig file from Openshift and place it here and be sure to rename the kubeconfig to `config`: `$HOME/.kube/config`
+Once the admin creates the credentials for the user, the user just has to login via username and password to receive a kubeconfig in `$HOME/.kube/config`.<br>
+Run the following command: `oc login <cluster-url> -u <newuser> -p <password>`
