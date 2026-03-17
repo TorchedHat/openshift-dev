@@ -19,6 +19,11 @@ oc create secret generic htpass-secret \
 ```
 4. Verify the user can log in<br>
 `oc login -u newuser`
+5. Create a dev namespace for the new user to use. The example uses alice.
+```
+oc new-project alice-dev
+oc adm policy add-role-to-user view alice -n alice-dev
+```
 
 #### Other useful commands
 ```
@@ -37,9 +42,9 @@ oc create secret generic $USERNAME-gcloud-config \
   --from-file=$HOME/.config/gcloud/application_default_credentials.json
 ```
 3. Apply Role and Role bindings so that user can access created secrets.<br>
-`oc apply -f <(sed "s/<username>/alice/g" rbac.yml`
+`oc apply -n alice-dev -f <(sed "s/<username>/alice/g" rbac.yml`
 4. Apply PVC to have persisent folder even if pods are destroyed.<br>
-`oc apply -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml`
+`oc apply -n alice-dev -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml`
 
 ## Users
 ### Kubeconfig
