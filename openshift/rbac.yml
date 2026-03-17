@@ -1,0 +1,24 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: <username>-ssh-access
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["<username>-git-ssh-key"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: <username>-ssh-access-binding
+  namespace: default
+subjects:
+  - kind: User
+    name: <username>
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: <username>-ssh-access
+  apiGroup: rbac.authorization.k8s.io
