@@ -23,5 +23,9 @@ oc apply -f <(sed "s/<username>/$USERNAME/g" persistent-workspace-pvc.yml)
 # push quay image secret to pull image from quay
 oc apply -f <(sed "s/<username>/$USERNAME/g" rh-ee-sampark-dev-bot-secret.yml)
 
+# create configmaps for bazel and gdbinit
+oc apply -f <(sed "s/<username>/$USERNAME/g" bazel-configmap.yml)
+oc apply -f <(sed "s/<username>/$USERNAME/g" gdbinit-configmap.yml)
+
 # create deployment for the user
 oc apply -f <(sed "s/<username>/$USERNAME/g" deployment.yml)

@@ -32,6 +32,12 @@ spec:
         - name: pytorch-eco-data
           persistentVolumeClaim:
             claimName: pytorch-eco-storage-<username>
+        - name: bazelrc
+          configMap:
+            name: bazelrc
+        - name: gdbinit
+          configMap:
+            name: gdbinit
         - name: dshm
           emptyDir:
             medium: Memory
@@ -62,7 +68,13 @@ spec:
               readOnly: true
               mountPath: /root/.config/gcloud
             - name: pytorch-eco-data
-              mountPath: /root
+              mountPath: /workspace
+            - name: bazelrc
+              mountPath: /root/.bazelrc
+              subPath: .bazelrc
+            - name: gdbinit
+              mountPath: /root/.gdbinit
+              subPath: .gdbinit
             - name: dshm
               mountPath: /dev/shm
           terminationMessagePolicy: File

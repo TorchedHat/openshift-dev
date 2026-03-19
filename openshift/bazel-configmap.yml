@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bazelrc
+  namespace: <username>
+data:
+  .bazelrc: |
+    build --local_ram_resources=HOST_RAM*0.5 --local_cpu_resources=4 --disk_cache=/workspace/bazel-cache
