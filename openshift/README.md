@@ -19,11 +19,6 @@ oc create secret generic htpass-secret \
 ```
 4. Verify the user can log in<br>
 `oc login -u newuser`
-5. Create a dev namespace for the new user to use. The example uses alice.
-```
-oc new-project alice-dev
-oc adm policy add-role-to-user view alice -n alice-dev
-```
 
 #### Other useful commands
 ```
@@ -34,9 +29,13 @@ htpasswd -D htpasswd olduser
 cat htpasswd
 ```
 
-### Adding secrets
+### Creating development space
 Run `create_dev.sh` (The following explain the content in case you want to do them individually.)
-  1. Create openshift secret for git-ssh-key.
+  1. Create namespace for the user<br>
+    `oc apply -f <(sed "s/<username>/alice/g" namespace.yml)`
+  2. Apply anyuid to bypass SCC so that they can run as root.<br>
+    `oc adm policy add-scc-to-user anyuid -z default -n alice`
+  3. Create openshift secret for git-ssh-key.
     ```bash
     oc create secret generic $USERNAME-git-ssh-key \
       --namespace=$USERNAME \
@@ -44,19 +43,26 @@ Run `create_dev.sh` (The following explain the content in case you want to do th
       --from-file=ssh-publickey=$HOME/.ssh/id_github.pub \
       --from-file=known_hosts=<(ssh-keyscan github.com 2>/dev/null)
     ```
-  2. Create openshift secret for the gcloud authentication json file for claude use.
+  4. Create openshift secret for the gcloud authentication json file for claude use.
     ```bash
       oc create secret generic $USERNAME-gcloud-config \
         --namespace=$USERNAME \
         --from-file=$HOME/.config/gcloud/application_default_credentials.json
     ```
     
-  3. Apply Role and Role bindings so that user can access created secrets.<br>
-`oc apply -n alice -f <(sed "s/<username>/alice/g" rbac.yml)`
-  4. Apply PVC to have persisent folder even if pods are destroyed.<br>
-`oc apply -n alice -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml)`
-  5. Apply deployment manifest file.<br>
-`oc apply -n alice -f <(sed "s/<username>/alice/g" deployment.yml)`
+  5. Apply Role and Role bindings so that user can access created secrets.<br>
+    `oc apply -n alice -f <(sed "s/<username>/alice/g" rbac.yml)`
+  6. Apply PVC to have persisent folder even if pods are destroyed.<br>
+    `oc apply -n alice -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml)`
+  7. Push quay image secret to pull images from quay
+    `oc apply -f <(sed "s/<username>/alice/g" rh-ee-sampark-dev-bot-secret.yml)`
+  8. Create configmaps for bazel and gdbinit
+    ```bash
+    oc apply -f <(sed "s/<username>/alice/g" bazel-configmap.yml)
+    oc apply -f <(sed "s/<username>/alice/g" gdbinit-configmap.yml)
+    ```
+  9.  Apply deployment manifest file.<br>
+    `oc apply -f <(sed "s/<username>/alice/g" deployment.yml)`
 
 ## Users
 ### Kubeconfig
