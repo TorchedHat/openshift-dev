@@ -2,6 +2,12 @@
 
 read -p "Enter username: " USERNAME
 
+# create namespace for the user
+oc apply -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
+
+# Apply anyuid to bypass SCC.
+oc adm policy add-scc-to-user anyuid -z default -n $USERNAME
+
 # create git-ssh-key secret
 oc create secret generic $USERNAME-git-ssh-key \
   --namespace=$USERNAME \

@@ -83,7 +83,9 @@ spec:
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
       dnsPolicy: ClusterFirst
-      securityContext: {}
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
       imagePullSecrets:
         - name: rh-ee-sampark-dev-bot-pull-secret
       schedulerName: default-scheduler

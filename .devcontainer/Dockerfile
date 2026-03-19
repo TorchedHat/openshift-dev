@@ -148,9 +148,6 @@ RUN rm -f /usr/bin/gcc /usr/bin/g++ && \
     ln -s /usr/bin/gcc-13 /usr/bin/gcc && \
     ln -s /usr/bin/g++-13 /usr/bin/g++
 
-# Make entire filesystem group writeable so any arbitrary user from Openshift will be able to write to it.
-RUN chmod -R g=u / 2>/dev/null; true
-
 # set env variables
 ENV CLAUDE_CODE_USE_VERTEX=1 \
     CLOUD_ML_REGION=us-east5 \
