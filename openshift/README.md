@@ -3,7 +3,7 @@
 ## Admin only
 ### Adding Users
 Currently configuring user creation and credentials using htpasswd. 
-The command to generate an HTPasswd file is `htpasswd -c -B users.htpasswd alice` (for first time creation and this will generate a `users.htpasswd` file. 
+The command to generate an HTPasswd file is `htpasswd -c -B users.htpasswd alice` (for first time creation and this will generate a `users.htpasswd` file.) 
 Then the following command for adding additional users, `htpasswd -B users.htpasswd bob`.
 
 1. Download the existing htpasswd file<br>
@@ -35,16 +35,28 @@ cat htpasswd
 ```
 
 ### Adding secrets
-1. Run `create_git_secret.sh`
-2. Create openshift secret for the gcloud authentication json file for claude use.<br>
-```
-oc create secret generic $USERNAME-gcloud-config \
-  --from-file=$HOME/.config/gcloud/application_default_credentials.json
-```
-3. Apply Role and Role bindings so that user can access created secrets.<br>
-`oc apply -n alice-dev -f <(sed "s/<username>/alice/g" rbac.yml)`
-4. Apply PVC to have persisent folder even if pods are destroyed.<br>
-`oc apply -n alice-dev -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml)`
+Run `create_dev.sh` (The following explain the content in case you want to do them individually.)
+  1. Create openshift secret for git-ssh-key.
+    ```bash
+    oc create secret generic $USERNAME-git-ssh-key \
+      --namespace=$USERNAME \
+      --from-file=ssh-privatekey=$HOME/.ssh/id_github \
+      --from-file=ssh-publickey=$HOME/.ssh/id_github.pub \
+      --from-file=known_hosts=<(ssh-keyscan github.com 2>/dev/null)
+    ```
+  2. Create openshift secret for the gcloud authentication json file for claude use.
+    ```bash
+      oc create secret generic $USERNAME-gcloud-config \
+        --namespace=$USERNAME \
+        --from-file=$HOME/.config/gcloud/application_default_credentials.json
+    ```
+    
+  3. Apply Role and Role bindings so that user can access created secrets.<br>
+`oc apply -n alice -f <(sed "s/<username>/alice/g" rbac.yml)`
+  4. Apply PVC to have persisent folder even if pods are destroyed.<br>
+`oc apply -n alice -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml)`
+  5. Apply deployment manifest file.<br>
+`oc apply -n alice -f <(sed "s/<username>/alice/g" deployment.yml)`
 
 ## Users
 ### Kubeconfig

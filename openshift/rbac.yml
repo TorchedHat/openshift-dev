@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: <username>-access
-  namespace: default
+  namespace: <username>
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -13,7 +13,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: <username>-access-binding
-  namespace: default
+  namespace: <username>
 subjects:
   - kind: User
     name: <username>
