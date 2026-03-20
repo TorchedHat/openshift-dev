@@ -1,6 +1,7 @@
 # Getting started with Openshift
 
 ## Important
+### Update hosts file
 The Openshift cluster will have been made by Jetlag. There is no real load balancer or dns server that is making the cluster public so the user will have to add IP addresses to access the Openshift console via their web browser. Add the following to your `/etc/hosts` file.
 
 ```bash
@@ -8,8 +9,11 @@ The Openshift cluster will have been made by Jetlag. There is no real load balan
 10.6.62.23    oauth-openshift.apps.mno.example.com
 10.6.62.23    console-openshift-console.apps.mno.example.com
 ```
+### Install oc and kubectl binaries
+Download the CLI tools go this link: https://console.redhat.com/openshift/install/metal/multi and navigate to the command line interface and click the download command-line tools. Once you have the tarball, follow the documentation to install the CLI tools, https://docs.redhat.com/en/documentation/openshift_container_platform/4.5/html/installing_on_rhv/cli-installing-cli_installing-rhv-default.
 
-Once you have added these mappings, go to `console-openshift-console.apps.mno.example.com` to get started!
+
+Once you have added these mappings and have the binaries, go to `console-openshift-console.apps.mno.example.com` to get started!
 
 ## Admin
 ### Adding Users
