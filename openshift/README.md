@@ -1,5 +1,16 @@
 # Getting started with Openshift
 
+## Important
+The Openshift cluster will have been made by Jetlag. There is no real load balancer or dns server that is making the cluster public so the user will have to add IP addresses to access the Openshift console via their web browser. Add the following to your `/etc/hosts` file.
+
+```bash
+10.6.62.23    api.mno.example.com
+10.6.62.23    oauth-openshift.apps.mno.example.com
+10.6.62.23    console-openshift-console.apps.mno.example.com
+```
+
+Once you have added these mappings, go to `console-openshift-console.apps.mno.example.com` to get started!
+
 ## Admin
 ### Adding Users
 Currently configuring user creation and credentials using htpasswd. 
@@ -7,12 +18,12 @@ The command to generate an HTPasswd file is `htpasswd -c -B users.htpasswd alice
 Then the following command for adding additional users, `htpasswd -B users.htpasswd bob`.
 
 1. Download the existing htpasswd file<br>
-`oc get secret htpass-secret -n openshift-config -o jsonpath='{.data.htpasswd}' | base64 -d > htpasswd`
+`oc get secret htpasswd-secret -n openshift-config -o jsonpath='{.data.htpasswd}' | base64 -d > htpasswd`
 2. Add a new user<br>
 `htpasswd -B htpasswd newuser` # this will prompt for a password.
 3. Update the secret
 ```
-oc create secret generic htpass-secret \
+oc create secret generic htpasswd-secret \
   --from-file=htpasswd=htpasswd \
   -n openshift-config \
   --dry-run=client -o yaml | oc replace -f -
