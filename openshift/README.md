@@ -1,6 +1,6 @@
 # Getting started with Openshift
 
-## Admin only
+## Admin
 ### Adding Users
 Currently configuring user creation and credentials using htpasswd. 
 The command to generate an HTPasswd file is `htpasswd -c -B users.htpasswd alice` (for first time creation and this will generate a `users.htpasswd` file.) 
@@ -30,12 +30,31 @@ cat htpasswd
 ```
 
 ### Creating development space
-Run `create_dev.sh` (The following explain the content in case you want to do them individually.)
+Run `create_dev_admin.sh` (The following explain the content in case you want to do them individually. This script is for admin only!)
   1. Create namespace for the user<br>
     `oc apply -f <(sed "s/<username>/alice/g" namespace.yml)`
   2. Apply anyuid to bypass SCC so that they can run as root.<br>
     `oc adm policy add-scc-to-user anyuid -z default -n alice`
-  3. Create openshift secret for git-ssh-key.
+  3. Apply edit role to the user to allow them to create resources in their namespace.<br>
+    `oc adm policy add-role-to-user edit alice -n alice`
+  4. Apply Role and Role bindings so that user can access created secrets.<br>
+    `oc apply -n alice -f <(sed "s/<username>/alice/g" rbac.yml)`
+  5. Apply PVC to have persisent folder even if pods are destroyed.<br>
+    `oc apply -n alice -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml)`
+  6. Push quay image secret to pull images from quay
+    `oc apply -f <(sed "s/<username>/alice/g" rh-ee-sampark-dev-bot-secret.yml)`
+  7. Create configmaps for bazel and gdbinit
+    ```bash
+    oc apply -f <(sed "s/<username>/alice/g" bazel-configmap.yml)
+    oc apply -f <(sed "s/<username>/alice/g" gdbinit-configmap.yml)
+    ```
+
+## Users
+
+### Creating development space
+Once the cluster admin creates the user and its respective namespace and **only then** run `create_dev_user.sh`.  The following explain the content in case you want to do them individually. This script is for users to get started with their deployment pod.  The script will prompt the user for their Openshift username, path to the ssh private key file, and their gcloud authentication default json file.
+
+  1. Create openshift secret for git-ssh-key.
     ```bash
     oc create secret generic $USERNAME-git-ssh-key \
       --namespace=$USERNAME \
@@ -43,28 +62,15 @@ Run `create_dev.sh` (The following explain the content in case you want to do th
       --from-file=ssh-publickey=$HOME/.ssh/id_github.pub \
       --from-file=known_hosts=<(ssh-keyscan github.com 2>/dev/null)
     ```
-  4. Create openshift secret for the gcloud authentication json file for claude use.
+  2. Create openshift secret for the gcloud authentication json file for claude use.
     ```bash
       oc create secret generic $USERNAME-gcloud-config \
         --namespace=$USERNAME \
         --from-file=$HOME/.config/gcloud/application_default_credentials.json
     ```
-    
-  5. Apply Role and Role bindings so that user can access created secrets.<br>
-    `oc apply -n alice -f <(sed "s/<username>/alice/g" rbac.yml)`
-  6. Apply PVC to have persisent folder even if pods are destroyed.<br>
-    `oc apply -n alice -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml)`
-  7. Push quay image secret to pull images from quay
-    `oc apply -f <(sed "s/<username>/alice/g" rh-ee-sampark-dev-bot-secret.yml)`
-  8. Create configmaps for bazel and gdbinit
-    ```bash
-    oc apply -f <(sed "s/<username>/alice/g" bazel-configmap.yml)
-    oc apply -f <(sed "s/<username>/alice/g" gdbinit-configmap.yml)
-    ```
-  9.  Apply deployment manifest file.<br>
+  3. Apply deployment manifest file.<br>
     `oc apply -f <(sed "s/<username>/alice/g" deployment.yml)`
 
-## Users
 ### Kubeconfig
 Once the admin creates the credentials for the user, the user just has to login via username and password to receive a kubeconfig in `$HOME/.kube/config`.<br>
 Run the following command: `oc login <cluster-url> -u <newuser> -p <password>`

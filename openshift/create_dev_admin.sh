@@ -8,17 +8,8 @@ oc apply -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
 # Apply anyuid to bypass SCC.
 oc adm policy add-scc-to-user anyuid -z default -n $USERNAME
 
-# create git-ssh-key secret
-oc create secret generic $USERNAME-git-ssh-key \
-  --namespace=$USERNAME \
-  --from-file=ssh-privatekey=$HOME/.ssh/id_github \
-  --from-file=ssh-publickey=$HOME/.ssh/id_github.pub \
-  --from-file=known_hosts=<(ssh-keyscan github.com 2>/dev/null)
-
-# create gcloud authentication secret
-oc create secret generic $USERNAME-gcloud-config \
-  --namespace=$USERNAME \
-  --from-file=$HOME/.config/gcloud/application_default_credentials.json
+# Apply edit role to the user to allow them to create resources in their namespace.
+oc adm policy add-role-to-user edit $USERNAME -n $USERNAME
 
 # create RBAC for the user
 oc apply -f <(sed "s/<username>/$USERNAME/g" rbac.yml)
@@ -32,6 +23,3 @@ oc apply -f <(sed "s/<username>/$USERNAME/g" rh-ee-sampark-dev-bot-secret.yml)
 # create configmaps for bazel and gdbinit
 oc apply -f <(sed "s/<username>/$USERNAME/g" bazel-configmap.yml)
 oc apply -f <(sed "s/<username>/$USERNAME/g" gdbinit-configmap.yml)
-
-# create deployment for the user
-oc apply -f <(sed "s/<username>/$USERNAME/g" deployment.yml)
