@@ -41,6 +41,19 @@ spec:
         - name: dshm
           emptyDir:
             medium: Memory
+      initContainers:
+        - name: init-container
+          image: 'quay.io/rh-ee-sampark/devcontainers:latest'
+          command:
+            - /bin/bash
+            - -c
+            - |
+              if [ ! -d /root/miniconda ]; then
+                echo "Copying miniconda to persistent storage..."
+                cp -a /root/miniconda /workspace/miniconda
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /workspace
       containers:
         - resources:
             limits:
