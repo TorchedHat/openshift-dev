@@ -54,6 +54,9 @@ spec:
           stdin: true
           terminationMessagePath: /dev/termination-log
           name: container
+          env:
+          - name: MAX_JOBS
+            value: "8"
           command:
             - /bin/bash
           ports:
@@ -68,7 +71,7 @@ spec:
               readOnly: true
               mountPath: /root/.config/gcloud
             - name: pytorch-eco-data
-              mountPath: /workspace
+              mountPath: /root/workspace
             - name: bazelrc
               mountPath: /root/.bazelrc
               subPath: .bazelrc

@@ -89,11 +89,11 @@ RUN cd cudnn \
 #Update file permissions
 RUN chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn*
 
-# Install miniconda to /miniconda
+# Install miniconda to /root/miniconda
 RUN curl -LO "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${OS_TYPE}.sh"
-RUN bash Miniforge3-Linux-${OS_TYPE}.sh -p /miniconda -b
-RUN rm Miniforge3-Linux-${OS_TYPE}.sh 
-ENV PATH=/miniconda/bin:${PATH}
+RUN bash Miniforge3-Linux-${OS_TYPE}.sh -p /root/miniconda -b
+RUN rm Miniforge3-Linux-${OS_TYPE}.sh
+ENV PATH=/root/miniconda/bin:${PATH}
 RUN conda update -y conda
 RUN conda init
 ARG PY_VER
@@ -106,7 +106,7 @@ RUN mkdir /pytorch
 ADD ${PYTORCH_RAW}/requirements.txt /pytorch/requirements.txt
 ADD ${PYTORCH_RAW}/requirements-build.txt /pytorch/requirements-build.txt
 ADD ${PYTORCH_RAW}/Makefile /pytorch/Makefile
-RUN /miniconda/bin/pip install -r /pytorch/requirements.txt mkl-static mkl-include
+RUN /root/miniconda/bin/pip install -r /pytorch/requirements.txt mkl-static mkl-include
 
 #Install triton.
 RUN mkdir /pytorch/scripts
@@ -130,10 +130,10 @@ ADD ${RAY_RAW}/python/requirements_compiled.txt /ray/requirements_compiled.txt
 RUN cd /ray\
     && sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt\
     && sed -i '/tensordict/d' test-requirements.txt\
-    && /miniconda/bin/pip install -r requirements.txt\
+    && /root/miniconda/bin/pip install -r requirements.txt\
     -r test-requirements.txt\
     pre-commit\
-    && /miniconda/bin/pip uninstall torch -y 2>/dev/null || true
+    && /root/miniconda/bin/pip uninstall torch -y 2>/dev/null || true
 RUN curl -fLO "https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-installer-linux-x86_64.sh"\
     && chmod +x bazel-6.5.0-installer-linux-x86_64.sh\
     && ./bazel-6.5.0-installer-linux-x86_64.sh
@@ -158,6 +158,6 @@ ENV CLAUDE_CODE_USE_VERTEX=1 \
     CC=gcc-13 \
     CXX=g++-13 \
     MAX_JOBS=25 \
-    CMAKE_PREFIX_PATH=/miniconda \
+    CMAKE_PREFIX_PATH=/root/miniconda \
     RAY_INSTALL_CPP=0 \
     RAY_DEBUG_BUILD=debug
