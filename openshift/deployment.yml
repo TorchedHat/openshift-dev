@@ -49,8 +49,7 @@ spec:
             - -c
             - |
               if [ ! -d /root/miniconda ]; then
-                echo "Copying miniconda to persistent storage..."
-                cp -a /root/miniconda /workspace/miniconda
+                cp -a /root /workspace
           volumeMounts:
             - name: pytorch-eco-data
               mountPath: /workspace
@@ -77,14 +76,14 @@ spec:
               protocol: TCP
           imagePullPolicy: Always
           volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /root
             - name: ssh-key
               readOnly: true
               mountPath: /root/.ssh
             - name: gcloud-config
               readOnly: true
               mountPath: /root/.config/gcloud
-            - name: pytorch-eco-data
-              mountPath: /root/workspace
             - name: bazelrc
               mountPath: /root/.bazelrc
               subPath: .bazelrc
