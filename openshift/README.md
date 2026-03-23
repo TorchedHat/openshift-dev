@@ -86,6 +86,9 @@ Once the cluster admin creates the user and its respective namespace and **only 
   3. Apply deployment manifest file.<br>
     `oc apply -f <(sed "s/<username>/alice/g" deployment.yml)`
 
+### Important Developing notes
+Do not open tmux or screen from vscode. As the vscode is tied to that shell session when vscode closes so will all tmux sessions. Run this command outside of vscode to make sure that your tmux session will run even if vscode closes. `oc exec -it <ur-pod-name> -- tmux new -s <tmux-session-name>`. Use `ctrl + b` and then `d` to exit the session without killing tmux. This will ensure tmux is running even if vscode closes.
+
 ### Kubeconfig
 Once the admin creates the credentials for the user, the user just has to login via username and password to receive a kubeconfig in `$HOME/.kube/config`.<br>
 Run the following command: `oc login <cluster-url> -u <newuser> -p <password>`
