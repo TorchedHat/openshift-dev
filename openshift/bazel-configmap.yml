@@ -5,4 +5,4 @@ metadata:
   namespace: <username>
 data:
   .bazelrc: |
-    build --local_ram_resources=HOST_RAM*0.5 --local_cpu_resources=4 --disk_cache=/root/bazel-cache
+    build --local_ram_resources=HOST_RAM*0.5 --local_cpu_resources=4 --disk_cache=/root/bazel-cache --compilation_mode=dbg
