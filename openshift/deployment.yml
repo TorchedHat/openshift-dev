@@ -48,11 +48,12 @@ spec:
             - /bin/bash
             - -c
             - |
-              if [ ! -d /root/miniconda ]; then
-                cp -a /root /workspace
+              if [ ! -d /mnt/data/miniconda ]; then
+                cp -a /root/. /mnt/data/
+              fi
           volumeMounts:
             - name: pytorch-eco-data
-              mountPath: /workspace
+              mountPath: /mnt/data
       containers:
         - resources:
             limits:
