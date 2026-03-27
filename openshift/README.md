@@ -70,19 +70,19 @@ Run `create_dev_admin.sh` (The following explain the content in case you want to
 Once the cluster admin creates the user and its respective namespace and **only then** run `create_dev_user.sh`.  The following explain the content in case you want to do them individually. This script is for users to get started with their deployment pod.  The script will prompt the user for their Openshift username, path to the ssh private key file, and their gcloud authentication default json file.
 
   1. Create openshift secret for git-ssh-key.
-    ```bash
-    oc create secret generic $USERNAME-git-ssh-key \
-      --namespace=$USERNAME \
-      --from-file=ssh-privatekey=$HOME/.ssh/id_github \
-      --from-file=ssh-publickey=$HOME/.ssh/id_github.pub \
-      --from-file=known_hosts=<(ssh-keyscan github.com 2>/dev/null)
-    ```
+```bash
+oc create secret generic $USERNAME-git-ssh-key \
+  --namespace=$USERNAME \
+  --from-file=ssh-privatekey=$HOME/.ssh/id_github \
+  --from-file=ssh-publickey=$HOME/.ssh/id_github.pub \
+  --from-file=known_hosts=<(ssh-keyscan github.com 2>/dev/null)
+```
   2. Create openshift secret for the gcloud authentication json file for claude use.
-    ```bash
-      oc create secret generic $USERNAME-gcloud-config \
-        --namespace=$USERNAME \
-        --from-file=$HOME/.config/gcloud/application_default_credentials.json
-    ```
+```bash
+oc create secret generic $USERNAME-gcloud-config \
+  --namespace=$USERNAME \
+  --from-file=$HOME/.config/gcloud/application_default_credentials.json
+```
   3. Apply deployment manifest file.<br>
     `oc apply -f <(sed "s/<username>/alice/g" deployment.yml)`
 
