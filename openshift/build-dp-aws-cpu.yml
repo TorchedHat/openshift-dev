@@ -1,17 +1,17 @@
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: <username>-dev
+  name: <username>-build
   namespace: <username>
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: <username>-dev
+      app: <username>-build
   template:
     metadata:
       labels:
-        app: <username>-dev
+        app: <username>-build
     spec:
       volumes:
         - name: ssh-key
@@ -58,16 +58,16 @@ spec:
         - resources:
             limits:
               cpu: '8'
-              memory: 48Gi
+              memory: 100Gi
             requests:
               cpu: '8'
-              memory: 48Gi
+              memory: 100Gi
           stdin: true
           terminationMessagePath: /dev/termination-log
           name: container
           env:
           - name: MAX_JOBS
-            value: "4"
+            value: "8"
           command:
             - /bin/bash
           ports:
