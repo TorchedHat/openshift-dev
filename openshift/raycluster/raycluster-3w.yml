@@ -1,0 +1,161 @@
+apiVersion: ray.io/v1alpha1
+kind: RayCluster
+metadata:
+  name: raycluster-3w
+spec:
+  rayVersion: "3.0.0"
+  headGroupSpec:
+    serviceType: ClusterIP
+    rayStartParams:
+      dashboard-host: "0.0.0.0"
+    
+    template:
+      metadata: {}
+      spec:
+        containers:
+        - name: ray-head
+          image: quay.io/rh-ee-sampark/devcontainers:latest
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 8
+              memory: 64Gi
+            requests:
+              cpu: 8
+              memory: 64Gi
+          ports:
+          - containerPort: 6379
+            name: gcs
+          - containerPort: 8265
+            name: dashboard
+          - containerPort: 10001
+            name: client
+          - containerPort: 8000
+            name: serve
+          env:
+          - name: CPU_REQUEST
+            valueFrom:
+              resourceFieldRef:
+                containerName: ray-head
+                resource: requests.cpu
+          - name: CPU_LIMITS
+            valueFrom:
+              resourceFieldRef:
+                containerName: ray-head
+                resource: limits.cpu
+          - name: MEMORY_LIMITS
+            valueFrom:
+              resourceFieldRef:
+                containerName: ray-head
+                resource: limits.memory
+          - name: MEMORY_REQUESTS
+            valueFrom:
+              resourceFieldRef:
+                containerName: ray-head
+                resource: requests.memory
+          - name: MY_POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /root
+            - name: gdbinit
+              mountPath: /root/.gdbinit
+              subPath: .gdbinit
+            - name: dshm
+              mountPath: /dev/shm
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh","-c","ray stop"]
+        imagePullSecrets:
+          - name: rh-ee-sampark-dev-bot-pull-secret
+        volumes:
+          - name: pytorch-eco-data
+            persistentVolumeClaim:
+              claimName: pytorch-eco-data-<username>
+          - name: gdbinit
+            configMap:
+              name: gdbinit
+          - name: dshm
+            emptyDir:
+              medium: Memory
+  workerGroupSpecs:
+  - groupName: cpu-group
+    replicas: 3
+    minReplicas: 1
+    maxReplicas: 4
+    rayStartParams: {}
+    template:
+      spec:
+        containers:
+        - name: ray-worker
+          image: quay.io/rh-ee-sampark/devcontainers:latest
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 8
+              memory: 64Gi
+            requests:
+              cpu: 8
+              memory: 64Gi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /root
+            - name: gdbinit
+              mountPath: /root/.gdbinit
+              subPath: .gdbinit
+            - name: dshm
+              mountPath: /dev/shm
+          env:
+            - name: RAY_DISABLE_DOCKER_CPU_WARNING
+              value: "1"
+            - name: TYPE
+              value: "worker"
+            - name: CPU_REQUEST
+              valueFrom:
+                resourceFieldRef:
+                  containerName: ray-worker
+                  resource: requests.cpu
+            - name: CPU_LIMITS
+              valueFrom:
+                resourceFieldRef:
+                  containerName: ray-worker
+                  resource: limits.cpu
+            - name: MEMORY_LIMITS
+              valueFrom:
+                resourceFieldRef:
+                  containerName: ray-worker
+                  resource: limits.memory
+            - name: MEMORY_REQUESTS
+              valueFrom:
+                resourceFieldRef:
+                  containerName: ray-worker
+                  resource: requests.memory
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          ports:
+          - containerPort: 80
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh","-c","ray stop"]
+        imagePullSecrets:
+          - name: rh-ee-sampark-dev-bot-pull-secret
+        volumes:
+          - name: pytorch-eco-data
+            persistentVolumeClaim:
+              claimName: pytorch-eco-data-<username>
+          - name: gdbinit
+            configMap:
+              name: gdbinit
+          - name: dshm
+            emptyDir:
+              medium: Memory
