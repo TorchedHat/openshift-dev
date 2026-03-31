@@ -31,7 +31,7 @@ spec:
             defaultMode: 0600
         - name: pytorch-eco-data
           persistentVolumeClaim:
-            claimName: pytorch-eco-storage-efs-<username>
+            claimName: shared-storage
         - name: bazelrc
           configMap:
             name: bazelrc
