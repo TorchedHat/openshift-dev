@@ -102,38 +102,40 @@ RUN conda install -c anaconda -y python=${PY_VER} gdb cuda-gdb
 #Install torch requirements.
 ARG PYTORCH_RAW=https://raw.githubusercontent.com/pytorch/pytorch/refs/heads/main
 
-RUN mkdir /pytorch
-ADD ${PYTORCH_RAW}/requirements.txt /pytorch/requirements.txt
-ADD ${PYTORCH_RAW}/requirements-build.txt /pytorch/requirements-build.txt
-ADD ${PYTORCH_RAW}/Makefile /pytorch/Makefile
-RUN /root/miniconda/bin/pip install -r /pytorch/requirements.txt mkl-static mkl-include
+RUN mkdir /build_pytorch
+ADD ${PYTORCH_RAW}/requirements.txt /build_pytorch/requirements.txt
+ADD ${PYTORCH_RAW}/requirements-build.txt /build_pytorch/requirements-build.txt
+ADD ${PYTORCH_RAW}/Makefile /build_pytorch/Makefile
+RUN /root/miniconda/bin/pip install -r /build_pytorch/requirements.txt mkl-static mkl-include
 
 #Install triton.
-RUN mkdir /pytorch/scripts
-ADD ${PYTORCH_RAW}/scripts/install_triton_wheel.sh /pytorch/scripts/install_triton_wheel.sh
-RUN chmod +x /pytorch/scripts/install_triton_wheel.sh && mkdir -p /pytorch/.ci/docker/
-ADD ${PYTORCH_RAW}/.ci/docker/triton_version.txt /pytorch/.ci/docker/triton_version.txt
-ADD ${PYTORCH_RAW}/.ci/docker/triton_xpu_version.txt /pytorch/.ci/docker/triton_xpu_version.txt
-RUN mkdir -p /pytorch/.ci/docker/ci_commit_pins/
-ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton.txt /pytorch/.ci/docker/ci_commit_pins/triton.txt
-ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton-xpu.txt /pytorch/.ci/docker/ci_commit_pins/triton-xpu.txt
-RUN cd /pytorch && make triton
+RUN mkdir /build_pytorch/scripts
+ADD ${PYTORCH_RAW}/scripts/install_triton_wheel.sh /build_pytorch/scripts/install_triton_wheel.sh
+RUN chmod +x /build_pytorch/scripts/install_triton_wheel.sh && mkdir -p /build_pytorch/.ci/docker/
+ADD ${PYTORCH_RAW}/.ci/docker/triton_version.txt /build_pytorch/.ci/docker/triton_version.txt
+ADD ${PYTORCH_RAW}/.ci/docker/triton_xpu_version.txt /build_pytorch/.ci/docker/triton_xpu_version.txt
+RUN mkdir -p /build_pytorch/.ci/docker/ci_commit_pins/
+ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton.txt /build_pytorch/.ci/docker/ci_commit_pins/triton.txt
+ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton-xpu.txt /build_pytorch/.ci/docker/ci_commit_pins/triton-xpu.txt
+RUN cd /build_pytorch && make triton
 
 # Install Ray
 ARG RAY_RAW=https://raw.githubusercontent.com/ray-project/ray/refs/heads/master
 
-RUN mkdir /ray
-ADD ${RAY_RAW}/python/requirements.txt /ray/requirements.txt
-ADD ${RAY_RAW}/python/requirements/test-requirements.txt /ray/test-requirements.txt
-ADD ${RAY_RAW}/python/requirements_compiled.txt /ray/requirements_compiled.txt
+RUN mkdir /build_ray
+ADD ${RAY_RAW}/python/requirements.txt /build_ray/requirements.txt
+ADD ${RAY_RAW}/python/requirements/test-requirements.txt /build_ray/test-requirements.txt
+ADD ${RAY_RAW}/python/requirements_compiled.txt /build_ray/requirements_compiled.txt
 
-RUN cd /ray\
+RUN cd /build_ray\
     && sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt\
     && sed -i '/tensordict/d' test-requirements.txt\
+    && sed -i 's/opencv-python.*/opencv-python<4.10.0/' test-requirements.txt\
     && /root/miniconda/bin/pip install -r requirements.txt\
     -r test-requirements.txt\
     pre-commit\
-    && /root/miniconda/bin/pip uninstall torch -y 2>/dev/null || true
+    && (/root/miniconda/bin/pip uninstall torch -y 2>/dev/null || true)\
+    && /root/miniconda/bin/pip install "numpy>=1.24,<1.27"
 RUN curl -fLO "https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-installer-linux-x86_64.sh"\
     && chmod +x bazel-6.5.0-installer-linux-x86_64.sh\
     && ./bazel-6.5.0-installer-linux-x86_64.sh
