@@ -31,7 +31,7 @@ spec:
             defaultMode: 0600
         - name: pytorch-eco-data
           persistentVolumeClaim:
-            claimName: shared-storage
+            claimName: pytorch-eco-storage-efs-<username>
         - name: bazelrc
           configMap:
             name: bazelrc
@@ -58,10 +58,10 @@ spec:
         - resources:
             limits:
               cpu: '8'
-              memory: 100Gi
+              memory: 64Gi
             requests:
               cpu: '8'
-              memory: 100Gi
+              memory: 64Gi
           stdin: true
           terminationMessagePath: /dev/termination-log
           name: container

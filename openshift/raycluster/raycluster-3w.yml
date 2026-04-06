@@ -4,11 +4,13 @@ metadata:
   name: raycluster-3w
 spec:
   rayVersion: "3.0.0"
+  enableInMemoryAutoscaling: false
   headGroupSpec:
     serviceType: ClusterIP
     rayStartParams:
       dashboard-host: "0.0.0.0"
-    
+      num-cpus: "0"
+      no-monitor: "true"
     template:
       metadata: {}
       spec:
@@ -19,10 +21,10 @@ spec:
           resources:
             limits:
               cpu: 8
-              memory: 64Gi
+              memory: 32Gi
             requests:
               cpu: 8
-              memory: 64Gi
+              memory: 32Gi
           ports:
           - containerPort: 6379
             name: gcs
@@ -74,7 +76,7 @@ spec:
         volumes:
           - name: pytorch-eco-data
             persistentVolumeClaim:
-              claimName: pytorch-eco-data-<username>
+              claimName: pytorch-eco-storage-efs-<username>
           - name: gdbinit
             configMap:
               name: gdbinit
@@ -84,8 +86,8 @@ spec:
   workerGroupSpecs:
   - groupName: cpu-group
     replicas: 3
-    minReplicas: 1
-    maxReplicas: 4
+    minReplicas: 3
+    maxReplicas: 3
     rayStartParams: {}
     template:
       spec:
@@ -96,10 +98,10 @@ spec:
           resources:
             limits:
               cpu: 8
-              memory: 64Gi
+              memory: 50Gi
             requests:
               cpu: 8
-              memory: 64Gi
+              memory: 50Gi
           volumeMounts:
             - name: pytorch-eco-data
               mountPath: /root
@@ -152,7 +154,7 @@ spec:
         volumes:
           - name: pytorch-eco-data
             persistentVolumeClaim:
-              claimName: pytorch-eco-data-<username>
+              claimName: pytorch-eco-storage-efs-<username>
           - name: gdbinit
             configMap:
               name: gdbinit
