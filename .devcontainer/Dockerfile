@@ -52,23 +52,27 @@ RUN dnf upgrade --refresh -y && \
         nodejs && \
     dnf clean all
 
-RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo && dnf install gh --repo gh-cli -y 
+RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo && dnf install gh --repo gh-cli -y && dnf clean all
 
 RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-#Install gcc c++ this may be subject to change for new versions, so keep it separte for easier debugging. This also installs gcc
-RUN dnf install -y gcc13-c++-13.3.1-2.fc${FEDORA_VERSION}.1
-# fedora 41 does not link gcc and g++ for version 13 manually add it.
-RUN alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100
-RUN alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
+# Install gcc c++ (may change for new versions). Also installs gcc.
+# fedora 41 does not link gcc and g++ for version 13 — add manually.
+RUN dnf install -y gcc13-c++-13.3.1-2.fc${FEDORA_VERSION}.1 \
+    && dnf clean all \
+    && alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
+    && alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
 
-# #Install Cuda Toolkit for fedora 41
-RUN mkdir ./cuda-toolkit
-RUN cd ./cuda-toolkit && wget https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm 
-RUN cd ./cuda-toolkit && rpm -i cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm 
-RUN cd ./cuda-toolkit && dnf -y install cuda-toolkit-12-9 
-RUN dnf clean all 
-RUN cd ./cuda-toolkit && rm ./cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm
+# Install Cuda Toolkit for fedora 41 (single layer to avoid keeping the ~4GB RPM)
+RUN mkdir ./cuda-toolkit \
+    && cd ./cuda-toolkit \
+    && wget https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
+    && rpm -i cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
+    && dnf -y install cuda-toolkit-12-9 \
+    && dnf clean all \
+    && rm -f cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
+    && rm -rf /var/cuda-repo-fedora41-12-9-local* \
+    && cd / && rm -rf ./cuda-toolkit
 
 #install g++ compiler that is compatiable with nvcc
 # RUN dnf install gcc13-c++
@@ -77,27 +81,28 @@ RUN cd ./cuda-toolkit && rm ./cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x
 # #update path to include nvcc
 # RUN export PATH=${PATH}:/usr/local/cuda-12.9/bin
 
-#Install cudnn
-RUN mkdir ./cudnn
-RUN cd cudnn \
+# Install cudnn (single layer)
+RUN mkdir ./cudnn \
+    && cd cudnn \
     && wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.6.0.74_cuda12-archive.tar.xz \
     && tar xvf cudnn-linux-x86_64-9.6.0.74_cuda12-archive.tar.xz \
     && mv ./cudnn-linux-x86_64-9.6.0.74_cuda12-archive/include/* /usr/local/cuda/include \
     && mv ./cudnn-linux-x86_64-9.6.0.74_cuda12-archive/lib/* /usr/local/cuda/lib64 \
-    && cd .. && rm -r ./cudnn
+    && cd / && rm -rf ./cudnn
 
 #Update file permissions
 RUN chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn*
 
-# Install miniconda to /root/miniconda
-RUN curl -LO "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${OS_TYPE}.sh"
-RUN bash Miniforge3-Linux-${OS_TYPE}.sh -p /root/miniconda -b
-RUN rm Miniforge3-Linux-${OS_TYPE}.sh
-ENV PATH=/root/miniconda/bin:${PATH}
-RUN conda update -y conda
-RUN conda init
+# Install miniconda to /root/miniconda (single layer)
 ARG PY_VER
-RUN conda install -c anaconda -y python=${PY_VER} gdb cuda-gdb
+RUN curl -LO "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${OS_TYPE}.sh" \
+    && bash Miniforge3-Linux-${OS_TYPE}.sh -p /root/miniconda -b \
+    && rm Miniforge3-Linux-${OS_TYPE}.sh \
+    && /root/miniconda/bin/conda update -y conda \
+    && /root/miniconda/bin/conda init \
+    && /root/miniconda/bin/conda install -c anaconda -y python=${PY_VER} gdb cuda-gdb \
+    && /root/miniconda/bin/conda clean -afy
+ENV PATH=/root/miniconda/bin:${PATH}
 
 #Install torch requirements.
 ARG PYTORCH_RAW=https://raw.githubusercontent.com/pytorch/pytorch/refs/heads/main
@@ -106,7 +111,7 @@ RUN mkdir /build_pytorch
 ADD ${PYTORCH_RAW}/requirements.txt /build_pytorch/requirements.txt
 ADD ${PYTORCH_RAW}/requirements-build.txt /build_pytorch/requirements-build.txt
 ADD ${PYTORCH_RAW}/Makefile /build_pytorch/Makefile
-RUN /root/miniconda/bin/pip install -r /build_pytorch/requirements.txt mkl-static mkl-include
+RUN /root/miniconda/bin/pip install --no-cache-dir -r /build_pytorch/requirements.txt mkl-static mkl-include
 
 #Install triton.
 RUN mkdir /build_pytorch/scripts
@@ -117,7 +122,7 @@ ADD ${PYTORCH_RAW}/.ci/docker/triton_xpu_version.txt /build_pytorch/.ci/docker/t
 RUN mkdir -p /build_pytorch/.ci/docker/ci_commit_pins/
 ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton.txt /build_pytorch/.ci/docker/ci_commit_pins/triton.txt
 ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton-xpu.txt /build_pytorch/.ci/docker/ci_commit_pins/triton-xpu.txt
-RUN cd /build_pytorch && make triton
+RUN cd /build_pytorch && make triton && rm -rf /build_pytorch
 
 # Install Ray
 ARG RAY_RAW=https://raw.githubusercontent.com/ray-project/ray/refs/heads/master
@@ -131,14 +136,16 @@ RUN cd /build_ray\
     && sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt\
     && sed -i '/tensordict/d' test-requirements.txt\
     && sed -i 's/opencv-python.*/opencv-python<4.10.0/' test-requirements.txt\
-    && /root/miniconda/bin/pip install -r requirements.txt\
+    && /root/miniconda/bin/pip install --no-cache-dir -r requirements.txt\
     -r test-requirements.txt\
     pre-commit\
     && (/root/miniconda/bin/pip uninstall torch -y 2>/dev/null || true)\
-    && /root/miniconda/bin/pip install "numpy>=1.24,<1.27"
+    && /root/miniconda/bin/pip install --no-cache-dir "numpy>=1.24,<1.27"\
+    && rm -rf /build_ray
 RUN curl -fLO "https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-installer-linux-x86_64.sh"\
     && chmod +x bazel-6.5.0-installer-linux-x86_64.sh\
-    && ./bazel-6.5.0-installer-linux-x86_64.sh
+    && ./bazel-6.5.0-installer-linux-x86_64.sh\
+    && rm -f bazel-6.5.0-installer-linux-x86_64.sh
 # set RAM and CPU limits for the ray build
 RUN echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25 --disk_cache=~/bazel-cache" >> /root/.bazelrc
 
