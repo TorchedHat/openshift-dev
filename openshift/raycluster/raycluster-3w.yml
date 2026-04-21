@@ -2,6 +2,7 @@ apiVersion: ray.io/v1alpha1
 kind: RayCluster
 metadata:
   name: raycluster-3w
+  namespace: <username>
 spec:
   rayVersion: "3.0.0"
   enableInMemoryAutoscaling: false
