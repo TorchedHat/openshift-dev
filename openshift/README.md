@@ -9,30 +9,37 @@ The Openshift cluster will have been made by Jetlag. There is no real load balan
 10.6.62.23    oauth-openshift.apps.mno.example.com
 10.6.62.23    console-openshift-console.apps.mno.example.com
 ```
-### Install oc and kubectl binaries
+### Install oc, kubectl, and ibmcloud binaries
 Download the CLI tools go this link: https://console.redhat.com/openshift/install/metal/multi and navigate to the command line interface and click the download command-line tools. Once you have the tarball, follow the documentation to install the CLI tools, https://docs.redhat.com/en/documentation/openshift_container_platform/4.5/html/installing_on_rhv/cli-installing-cli_installing-rhv-default.
 
+Install the ibmcloud binary with the following command.
+```bash
+curl -fsSL https://clis.cloud.ibm.com/install/linux | sh
+```
 
 Once you have added these mappings and have the binaries, go to `console-openshift-console.apps.mno.example.com` to get started!
 
 ## Admin
-### Adding Users
+### Adding Users (ibmcloud)
+1. Invite newly created user to the group. `ibmcloud account user-invite user@email.com`
+
+### Adding Users (htpasswd)
 Currently configuring user creation and credentials using htpasswd. 
 The command to generate an HTPasswd file is `htpasswd -c -B users.htpasswd alice` (for first time creation and this will generate a `users.htpasswd` file.) 
 Then the following command for adding additional users, `htpasswd -B users.htpasswd bob`.
 
 1. Download the existing htpasswd file<br>
 `oc get secret htpasswd-secret -n openshift-config -o jsonpath='{.data.htpasswd}' | base64 -d > htpasswd`
-2. Add a new user<br>
+1. Add a new user<br>
 `htpasswd -B htpasswd newuser` # this will prompt for a password.
-3. Update the secret
+1. Update the secret
 ```
 oc create secret generic htpasswd-secret \
   --from-file=htpasswd=htpasswd \
   -n openshift-config \
   --dry-run=client -o yaml | oc replace -f -
 ```
-4. Verify the user can log in<br>
+1. Verify the user can log in<br>
 `oc login -u newuser`
 
 #### Other useful commands
@@ -66,7 +73,12 @@ Run `create_dev_admin.sh` (The following explain the content in case you want to
 
 ## Users
 
-### Creating development space
+### Creating development space (ibmcloud)
+1. Create an IBM cloud account by going to https://cloud.ibm.com. Use your Red Hat email.
+2. Join the cluster group through an invite link sent by an admin.
+3. Run `ibmcloud login --sso` in the command line to login to IBM cloud in the terminal. Run `ibmcloud ks cluster config` to download the `kubeconfig` file. This file you can put in `~/.kube/config` so that `kubectl` and `oc` will pick this up automatically.
+
+### Creating development space (RDU3)
 Once the cluster admin creates the user and its respective namespace and **only then** run `create_dev_user.sh`.  The following explain the content in case you want to do them individually. This script is for users to get started with their deployment pod.  The script will prompt the user for their Openshift username, path to the ssh private key file, and their gcloud authentication default json file.
 
   1. Create openshift secret for git-ssh-key.
