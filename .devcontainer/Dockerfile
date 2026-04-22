@@ -159,7 +159,7 @@ RUN rm -f /usr/bin/gcc /usr/bin/g++ && \
 
 # set env variables
 ENV CLAUDE_CODE_USE_VERTEX=1 \
-    CLOUD_ML_REGION=us-east5 \
+    CLOUD_ML_REGION=global \
     ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude \
     NVCC_CCBIN=g++-13 \
     PATH="/usr/local/cuda-12.9/bin:${PATH}" \
