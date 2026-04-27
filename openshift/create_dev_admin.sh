@@ -15,11 +15,11 @@ oc adm policy add-role-to-user edit $USERNAME -n $USERNAME
 oc apply -f <(sed "s/<username>/$USERNAME/g" rbac.yml)
 
 # create PVC for the user
-oc apply -f <(sed "s/<username>/$USERNAME/g" persistent-workspace-pvc.yml)
+oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/pytorch-nfs-rwx-pvc.yml)
 
 # push quay image secret to pull image from quay
 oc apply -f <(sed "s/<username>/$USERNAME/g" rh-ee-sampark-dev-bot-secret.yml)
 
 # create configmaps for bazel and gdbinit
-oc apply -f <(sed "s/<username>/$USERNAME/g" bazel-configmap.yml)
-oc apply -f <(sed "s/<username>/$USERNAME/g" gdbinit-configmap.yml)
+oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/bazel-configmap.yml)
+oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/gdbinit-configmap.yml)

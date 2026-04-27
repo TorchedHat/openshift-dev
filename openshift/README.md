@@ -62,13 +62,13 @@ Run `create_dev_admin.sh` (The following explain the content in case you want to
   4. Apply Role and Role bindings so that user can access created secrets.<br>
     `oc apply -n alice -f <(sed "s/<username>/alice/g" rbac.yml)`
   5. Apply PVC to have persisent folder even if pods are destroyed.<br>
-    `oc apply -n alice -f <(sed "s/<username>/alice/g" persistent-workspace-pvc.yml)`
+    `oc apply -n alice -f <(sed "s/<username>/alice/g" pvc/persistent-workspace-pvc.yml)`
   6. Push quay image secret to pull images from quay
     `oc apply -f <(sed "s/<username>/alice/g" rh-ee-sampark-dev-bot-secret.yml)`
   7. Create configmaps for bazel and gdbinit
     ```bash
-    oc apply -f <(sed "s/<username>/alice/g" bazel-configmap.yml)
-    oc apply -f <(sed "s/<username>/alice/g" gdbinit-configmap.yml)
+    oc apply -f <(sed "s/<username>/alice/g" config_map/bazel-configmap.yml)
+    oc apply -f <(sed "s/<username>/alice/g" config_map/gdbinit-configmap.yml)
     ```
 
 ## Users
@@ -96,7 +96,7 @@ oc create secret generic $USERNAME-gcloud-config \
   --from-file=$HOME/.config/gcloud/application_default_credentials.json
 ```
   3. Apply deployment manifest file.<br>
-    `oc apply -f <(sed "s/<username>/alice/g" deployment.yml)`
+    `oc apply -f <(sed "s/<username>/alice/g" deployment/deployment.yml)`
 
 ### Important Developing notes
 Do not open tmux or screen from vscode. As the vscode is tied to that shell session when vscode closes so will all tmux sessions. Run this command outside of vscode to make sure that your tmux session will run even if vscode closes. `oc exec -it <ur-pod-name> -- tmux new -s <tmux-session-name>`. Use `ctrl + b` and then `d` to exit the session without killing tmux. This will ensure tmux is running even if vscode closes.

@@ -1,0 +1,12 @@
+  apiVersion: v1                                                                                                                                       
+  kind: PersistentVolumeClaim                                                                                                                          
+  metadata:                                                                                                                                            
+    name: pytorch-ibmc-storage-<username>
+    namespace: <username>
+  spec:                                                                                                                                                
+    accessModes:                                                                                                                                     
+      - ReadWriteMany
+    storageClassName: nfs-rwx
+    resources:
+      requests:
+        storage: 250Gi   

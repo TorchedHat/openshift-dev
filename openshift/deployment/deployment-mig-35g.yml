@@ -1,17 +1,17 @@
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: <username>-dev
+  name: <username>-mig-35g-dev
   namespace: <username>
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
-      app: <username>-dev
+      app: <username>-mig-35g-dev
   template:
     metadata:
       labels:
-        app: <username>-dev
+        app: <username>-mig-35g-dev
     spec:
       volumes:
         - name: ssh-key
@@ -31,7 +31,7 @@ spec:
             defaultMode: 0600
         - name: pytorch-eco-data
           persistentVolumeClaim:
-            claimName: pytorch-eco-storage-<username>
+            claimName: pytorch-ibmc-storage-<username>
         - name: bazelrc
           configMap:
             name: bazelrc
@@ -57,13 +57,13 @@ spec:
       containers:
         - resources:
             limits:
-              cpu: '8'
-              memory: 32Gi
-              nvidia.com/gpu: '1'
+              cpu: '16'
+              memory: 64Gi
+              nvidia.com/mig-2g.35gb: '1'
             requests:
-              cpu: '8'
-              memory: 32Gi
-              nvidia.com/gpu: '1'
+              cpu: '16'
+              memory: 64Gi
+              nvidia.com/mig-2g.35gb: '1'
           stdin: true
           terminationMessagePath: /dev/termination-log
           name: container

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 read -p "Enter openshift username: " USERNAME
-read -p "Enter ssh private key path for github: " SSH_KEY_PATH
-read -p "Enter gcloud application default credentials path: " GCLOUD_CREDENTIALS
+read -e -p "Enter ssh private key path for github: " SSH_KEY_PATH
+read -e -p "Enter gcloud application default credentials path: " GCLOUD_CREDENTIALS
 
 # create git-ssh-key secret
 oc create secret generic $USERNAME-git-ssh-key \
@@ -17,4 +17,5 @@ oc create secret generic $USERNAME-gcloud-config \
   --from-file=$GCLOUD_CREDENTIALS
 
 # create deployment for the user
-oc apply -f <(sed "s/<username>/$USERNAME/g" deployment.yml)
+oc apply -f <(sed "s/<username>/$USERNAME/g" deployment/deployment-mig-18g.yml)
+oc apply -f <(sed "s/<username>/$USERNAME/g" deployment/deployment-mig-35g.yml)
