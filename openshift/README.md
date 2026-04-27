@@ -4,18 +4,18 @@
 ### Install oc, kubectl, and ibmcloud binaries
 Download the CLI tools go this link: https://console.redhat.com/openshift/install/metal/multi and navigate to the command line interface and click the download command-line tools. Once you have the tarball, follow the documentation to install the CLI tools, https://docs.redhat.com/en/documentation/openshift_container_platform/4.5/html/installing_on_rhv/cli-installing-cli_installing-rhv-default.
 
-Install the ibmcloud binary with the following command.
+Install the `ibmcloud` binary with the following command.
 ```bash
 curl -fsSL https://clis.cloud.ibm.com/install/linux | sh
 ```
 
 ### IBMCloud cluster
-Login to the cluster from the terminal using the following command: `ibmcloud login --sso`.<br>
-Then download the cluster config with the following command:<br>
+1. Login to the cluster from the terminal using the following command: `ibmcloud login --sso`.<br>
+2. Download the cluster config with the following command:<br>
 `ibmcloud ks cluster config --cluster d7llvfhr0oi9kj43639g`.<br>
-If you get the error that says that plugin `ks` is not available, install the plugin with the following command.<br>
+a. If you get the error that says that plugin `ks` is not available, install the plugin with the following command.<br>
 `ibmcloud plugin install kubernetes-service` and then rerun the above command.<br>
-Check if you have access by running `oc whoami`.
+3. Check if you have access by running `oc whoami`.
 
 ### RDU3 cluster ONLY!!! Update hosts file
 The Openshift cluster will have been made by Jetlag. There is no real load balancer or dns server that is making the cluster public so the user will have to add IP addresses to access the Openshift console via their web browser. Add the following to your `/etc/hosts` file.
