@@ -23,3 +23,6 @@ oc apply -f <(sed "s/<username>/$USERNAME/g" rh-ee-sampark-dev-bot-secret.yml)
 # create configmaps for bazel and gdbinit
 oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/bazel-configmap.yml)
 oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/gdbinit-configmap.yml)
+
+# create resourcequotas
+oc apply -f <(sed "s/<username>/$USERNAME/g" resourcequotas.yml)

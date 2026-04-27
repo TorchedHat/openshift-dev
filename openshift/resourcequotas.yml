@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: gpu-quota
+  namespace: <username>
+spec:
+  hard:
+    # MIG slices
+    requests.nvidia.com/mig-1g.18gb: "1"
+    requests.nvidia.com/mig-2g.35gb: "1"
+
+    # Full GPUs
+    requests.nvidia.com/gpu: "0"
+
+    # CPU and memory
+    requests.cpu: "8"
+    requests.memory: 32Gi
+    limits.cpu: "16"
+    limits.memory: 64Gi
+
+    # Storage
+    requests.storage: 300Gi
+    persistentvolumeclaims: "5"
