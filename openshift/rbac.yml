@@ -16,7 +16,7 @@ metadata:
   namespace: <username>
 subjects:
   - kind: User
-    name: <username>
+    name: <email>
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: Role

@@ -1,6 +1,8 @@
 #!/bin/bash
 
-read -p "Enter username: " USERNAME
+read -p "Enter IAM email (e.g. IAM#user@example.com): " EMAIL
+USERNAME="${EMAIL#*#}"
+USERNAME="${USERNAME%@*}"
 
 # create namespace for the user
 oc apply -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
@@ -9,10 +11,10 @@ oc apply -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
 oc adm policy add-scc-to-user anyuid -z default -n $USERNAME
 
 # Apply edit role to the user to allow them to create resources in their namespace.
-oc adm policy add-role-to-user edit $USERNAME -n $USERNAME
+oc adm policy add-role-to-user edit $EMAIL -n $USERNAME
 
 # create RBAC for the user
-oc apply -f <(sed "s/<username>/$USERNAME/g" rbac.yml)
+oc apply -f <(sed -e "s/<username>/$USERNAME/g" -e "s/<email>/$EMAIL/g" rbac.yml)
 
 # create PVC for the user
 oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/pytorch-nfs-rwx-pvc.yml)
