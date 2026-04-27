@@ -13,8 +13,8 @@ spec:
     requests.nvidia.com/gpu: "0"
 
     # CPU and memory
-    requests.cpu: "8"
-    requests.memory: 32Gi
+    requests.cpu: "16"
+    requests.memory: 64Gi
     limits.cpu: "16"
     limits.memory: 64Gi
 

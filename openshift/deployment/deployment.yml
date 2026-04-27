@@ -51,6 +51,13 @@ spec:
               if [ ! -d /mnt/data/miniconda ]; then
                 cp -a /root/. /mnt/data/
               fi
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: pytorch-eco-data
               mountPath: /mnt/data
