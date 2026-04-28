@@ -142,10 +142,13 @@ RUN cd /build_ray\
     && (/root/miniconda/bin/pip uninstall torch -y 2>/dev/null || true)\
     && /root/miniconda/bin/pip install --no-cache-dir "numpy>=1.24,<1.27"\
     && rm -rf /build_ray
-RUN curl -fLO "https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-installer-linux-x86_64.sh"\
-    && chmod +x bazel-6.5.0-installer-linux-x86_64.sh\
-    && ./bazel-6.5.0-installer-linux-x86_64.sh\
-    && rm -f bazel-6.5.0-installer-linux-x86_64.sh
+ADD ${RAY_RAW}/.bazelversion /build_ray/.bazelversion
+RUN BAZEL_VER=$(cat /build_ray/.bazelversion | tr -d '[:space:]')\
+    && curl -fLO "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VER}/bazel-${BAZEL_VER}-installer-linux-x86_64.sh"\
+    && chmod +x "bazel-${BAZEL_VER}-installer-linux-x86_64.sh"\
+    && ./"bazel-${BAZEL_VER}-installer-linux-x86_64.sh"\
+    && rm -f "bazel-${BAZEL_VER}-installer-linux-x86_64.sh"\
+    && rm -rf /build_ray
 # set RAM and CPU limits for the ray build
 RUN echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25 --disk_cache=~/bazel-cache" >> /root/.bazelrc
 
