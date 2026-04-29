@@ -68,11 +68,11 @@ RUN mkdir ./cuda-toolkit \
     && cd ./cuda-toolkit \
     && wget https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
     && rpm -i cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
+    && rm -f cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
+    && cd / && rm -rf ./cuda-toolkit \
     && dnf -y install cuda-toolkit-12-9 \
     && dnf clean all \
-    && rm -f cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
-    && rm -rf /var/cuda-repo-fedora41-12-9-local* \
-    && cd / && rm -rf ./cuda-toolkit
+    && rm -rf /var/cuda-repo-fedora41-12-9-local*
 
 #install g++ compiler that is compatiable with nvcc
 # RUN dnf install gcc13-c++
