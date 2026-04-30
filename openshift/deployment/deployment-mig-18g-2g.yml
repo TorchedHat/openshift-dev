@@ -1,0 +1,121 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: <username>-mig-18g-2g-dev
+  namespace: <username>
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: <username>-mig-18g-2g-dev
+  template:
+    metadata:
+      labels:
+        app: <username>-mig-18g-2g-dev
+    spec:
+      volumes:
+        - name: ssh-key
+          secret:
+            secretName: <username>-git-ssh-key
+            items:
+              - key: ssh-privatekey
+                path: id_ed25519
+              - key: ssh-publickey
+                path: id_ed25519.pub
+              - key: known_hosts
+                path: known_hosts
+            defaultMode: 0600
+        - name: gcloud-config
+          secret:
+            secretName: <username>-gcloud-config
+            defaultMode: 0600
+        - name: pytorch-eco-data
+          persistentVolumeClaim:
+            claimName: pytorch-ibmc-storage-<username>
+        - name: bazelrc
+          configMap:
+            name: bazelrc
+        - name: gdbinit
+          configMap:
+            name: gdbinit
+        - name: dshm
+          emptyDir:
+            medium: Memory
+      initContainers:
+        - name: init-container
+          image: 'quay.io/rh-ee-sampark/devcontainers:latest'
+          command:
+            - /bin/bash
+            - -c
+            - |
+              if [ ! -d /mnt/data/miniconda ]; then
+                cp -a /root/. /mnt/data/
+              fi
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /mnt/data
+      containers:
+        - resources:
+            limits:
+              cpu: '16'
+              memory: 64Gi
+              nvidia.com/mig-1g.18gb: 2
+            requests:
+              cpu: '16'
+              memory: 64Gi
+              nvidia.com/mig-1g.18gb: 2
+          stdin: true
+          terminationMessagePath: /dev/termination-log
+          name: container
+          env:
+          - name: MAX_JOBS
+            value: "8"
+          command:
+            - /bin/bash
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /root
+            - name: ssh-key
+              readOnly: true
+              mountPath: /root/.ssh
+            - name: gcloud-config
+              readOnly: true
+              mountPath: /root/.config/gcloud
+            - name: bazelrc
+              mountPath: /root/.bazelrc
+              subPath: .bazelrc
+            - name: gdbinit
+              mountPath: /root/.gdbinit
+              subPath: .gdbinit
+            - name: dshm
+              mountPath: /dev/shm
+          terminationMessagePolicy: File
+          tty: true
+          image: 'quay.io/rh-ee-sampark/devcontainers:latest'
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      imagePullSecrets:
+        - name: rh-ee-sampark-dev-bot-pull-secret
+      schedulerName: default-scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
