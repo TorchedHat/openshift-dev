@@ -90,7 +90,7 @@ Run `create_dev_admin.sh` (The following explain the content in case you want to
 a. This assumes that you have the `oc` binary already installed!<br>
 b. When prompted for the username, use NAME from your email: NAME@redhat.com<br>
 c. When prompted for ssh private key file, give the absolute file path to your ssh key that is registered in your github account. I.E. `~/.ssh/id_ed25519`.<br>
-d. When prompted for your gcloud authentication file, give the absolute file path that claude uses for authentication. `~/.config/gcloud/application_default_credentials.json`. This will give pods the capabilitie of using claude.
+d. When prompted for your gcloud authentication file, give the absolute file path that claude uses for authentication. `~/.config/gcloud/application_default_credentials.json`. This will give pods the capability of using claude.
 
 ### Creating development space (RDU3)
 Once the cluster admin creates the user and its respective namespace and **only then** run `create_dev_user.sh`.  The following explain the content in case you want to do them individually. This script is for users to get started with their deployment pod.  The script will prompt the user for their Openshift username, path to the ssh private key file, and their gcloud authentication default json file.
