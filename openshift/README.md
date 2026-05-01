@@ -84,7 +84,13 @@ Run `create_dev_admin.sh` (The following explain the content in case you want to
 ### Creating development space (ibmcloud)
 1. Create an IBM cloud account by going to https://cloud.ibm.com. Use your Red Hat email.
 2. Join the cluster group through an invite link sent by an admin.
-3. Run `ibmcloud login --sso` in the command line to login to IBM cloud in the terminal. Run `ibmcloud ks cluster config` to download the `kubeconfig` file. This file you can put in `~/.kube/config` so that `kubectl` and `oc` will pick this up automatically.
+3. Run `ibmcloud login --sso` in the command line to login to IBM cloud in the terminal. <br>
+  a. (Should have already done this part but showing this step for reference) Run `ibmcloud ks cluster config --cluster d7llvfhr0oi9kj43639g` to download the `kubeconfig` file. This file you can put in `~/.kube/config` so that `kubectl` and `oc` will pick this up automatically.
+4. Once the admin has created a namespace for you, make sure that your working directory is `devcontainers/openshift` and run the `create_dev_user.sh` script. This will automatically setup the basic development templates.<br>
+a. This assumes that you have the `oc` binary already installed!<br>
+b. When prompted for the username, use NAME from your email: NAME@redhat.com<br>
+c. When prompted for ssh private key file, give the absolute file path to your ssh key that is registered in your github account. I.E. `~/.ssh/id_ed25519`.<br>
+d. When prompted for your gcloud authentication file, give the absolute file path that claude uses for authentication. `~/.config/gcloud/application_default_credentials.json`. This will give pods the capabilitie of using claude.
 
 ### Creating development space (RDU3)
 Once the cluster admin creates the user and its respective namespace and **only then** run `create_dev_user.sh`.  The following explain the content in case you want to do them individually. This script is for users to get started with their deployment pod.  The script will prompt the user for their Openshift username, path to the ssh private key file, and their gcloud authentication default json file.
