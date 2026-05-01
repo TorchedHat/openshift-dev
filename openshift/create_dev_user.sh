@@ -19,3 +19,5 @@ oc create secret generic $USERNAME-gcloud-config \
 # create deployment for the user
 oc apply -f <(sed "s/<username>/$USERNAME/g" deployment/deployment-mig-18g.yml)
 oc apply -f <(sed "s/<username>/$USERNAME/g" deployment/deployment-mig-35g.yml)
+
+oc project $USERNAME

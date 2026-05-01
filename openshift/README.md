@@ -88,7 +88,7 @@ Run `create_dev_admin.sh` (The following explain the content in case you want to
   a. (Should have already done this part but showing this step for reference) Run `ibmcloud ks cluster config --cluster d7llvfhr0oi9kj43639g` to download the `kubeconfig` file. This file you can put in `~/.kube/config` so that `kubectl` and `oc` will pick this up automatically.
 4. Once the admin has created a namespace for you, make sure that your working directory is `devcontainers/openshift` and run the `create_dev_user.sh` script. This will automatically setup the basic development templates.<br>
 a. This assumes that you have the `oc` binary already installed!<br>
-b. When prompted for the username, use NAME from your email: NAME@redhat.com<br>
+b. When prompted for the username, use NAME from your email: NAME@redhat.com and omit the `@redhat.com`<br>
 c. When prompted for ssh private key file, give the absolute file path to your ssh key that is registered in your github account. I.E. `~/.ssh/id_ed25519`.<br>
 d. When prompted for your gcloud authentication file, give the absolute file path that claude uses for authentication. `~/.config/gcloud/application_default_credentials.json`. This will give pods the capability of using claude.
 
