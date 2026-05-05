@@ -16,6 +16,7 @@ curl -fsSL https://clis.cloud.ibm.com/install/linux | sh
 a. If you get the error that says that plugin `ks` is not available, install the plugin with the following command.<br>
 `ibmcloud plugin install kubernetes-service` and then rerun the above command.<br>
 3. Check if you have access by running `oc whoami`.
+4. (Non admins) Please refer to the [Users](Users) section to set up development.
 
 ### RDU3 cluster ONLY!!! Update hosts file
 The Openshift cluster will have been made by Jetlag. There is no real load balancer or dns server that is making the cluster public so the user will have to add IP addresses to access the Openshift console via their web browser. Add the following to your `/etc/hosts` file.
@@ -82,6 +83,7 @@ Run `create_dev_admin.sh` (The following explain the content in case you want to
 ## Users
 
 ### Creating development space (ibmcloud)
+Follow steps 1-3 if there is no kubeconfig file in `$HOME/.kube/config`. If already done, skip to step 4 and make sure that you have logged in to openshift with `oc login --web`.
 1. Create an IBM cloud account by going to https://cloud.ibm.com. Use your Red Hat email.
 2. Join the cluster group through an invite link sent by an admin.
 3. Run `ibmcloud login --sso` in the command line to login to IBM cloud in the terminal. <br>
