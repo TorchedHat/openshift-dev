@@ -1,0 +1,19 @@
+name: PR Build Check
+
+on:
+  pull_request:
+    paths:
+      - '.devcontainer/Dockerfile'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          push: false
