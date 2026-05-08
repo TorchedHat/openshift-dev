@@ -164,6 +164,7 @@ RUN rm -f /usr/bin/gcc /usr/bin/g++ && \
 ENV CLAUDE_CODE_USE_VERTEX=1 \
     CLOUD_ML_REGION=global \
     ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude \
+    USER=root \
     NVCC_CCBIN=g++-13 \
     PATH="/usr/local/cuda-12.9/bin:${PATH}" \
     CUDA_HOME=/usr/local/cuda-12.9 \
