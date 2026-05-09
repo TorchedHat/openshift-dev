@@ -49,8 +49,13 @@ RUN dnf upgrade --refresh -y && \
         tmux \
         tar \
         htop \
+        nix \
         nodejs && \
     dnf clean all
+
+# Enable Nix flakes
+RUN mkdir -p /root/.config/nix \
+    && echo 'experimental-features = nix-command flakes' > /root/.config/nix/nix.conf
 
 RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo && dnf install gh --repo gh-cli -y && dnf clean all
 
