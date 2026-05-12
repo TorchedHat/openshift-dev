@@ -2,7 +2,7 @@
 
 ## Important
 ### Install oc, kubectl, and ibmcloud binaries
-Download the CLI tools go this link: https://console.redhat.com/openshift/install/metal/multi and navigate to the command line interface and click the download command-line tools. Once you have the tarball, follow the documentation to install the CLI tools, https://docs.redhat.com/en/documentation/openshift_container_platform/4.5/html/installing_on_rhv/cli-installing-cli_installing-rhv-default.
+Download the CLI tools go this link: https://console.redhat.com/openshift/install/metal/multi and navigate to the command line interface and click the download command-line tools. Once you have the tarball, follow the documentation to install the CLI tools (note: only do steps 4 and 5 in the link), https://docs.redhat.com/en/documentation/openshift_container_platform/4.5/html/installing_on_rhv/cli-installing-cli_installing-rhv-default.
 
 Install the `ibmcloud` binary with the following command.
 ```bash
@@ -15,8 +15,9 @@ curl -fsSL https://clis.cloud.ibm.com/install/linux | sh
 `ibmcloud ks cluster config --cluster d7llvfhr0oi9kj43639g`.<br>
 a. If you get the error that says that plugin `ks` is not available, install the plugin with the following command.<br>
 `ibmcloud plugin install kubernetes-service` and then rerun the above command.<br>
-3. Check if you have access by running `oc whoami`.
-4. (Non admins) Please refer to the [Users](Users) section to set up development.
+3. Log in to the openshift cluster using `oc login --web`.
+4. Check if you have access by running `oc whoami`.
+5. (Non admins) Please refer to the [Users](Users) section to set up development.
 
 ### RDU3 cluster ONLY!!! Update hosts file
 The Openshift cluster will have been made by Jetlag. There is no real load balancer or dns server that is making the cluster public so the user will have to add IP addresses to access the Openshift console via their web browser. Add the following to your `/etc/hosts` file.
@@ -91,8 +92,8 @@ Follow steps 1-3 if there is no kubeconfig file in `$HOME/.kube/config`. If alre
 4. Once the admin has created a namespace for you, make sure that your working directory is `devcontainers/openshift` and run the `create_dev_user.sh` script. This will automatically setup the basic development templates.<br>
 a. This assumes that you have the `oc` binary already installed!<br>
 b. When prompted for the username, use NAME from your email: NAME@redhat.com and omit the `@redhat.com`<br>
-c. When prompted for ssh private key file, give the absolute file path to your ssh key that is registered in your github account. I.E. `~/.ssh/id_ed25519`.<br>
-d. When prompted for your gcloud authentication file, give the absolute file path that claude uses for authentication. `~/.config/gcloud/application_default_credentials.json`. This will give pods the capability of using claude.
+c. When prompted for ssh private key file, give the absolute file path to your ssh key that is registered in your github account. I.E. `/home/user/.ssh/id_ed25519`. DO NOT use the `~`.<br>
+d. When prompted for your gcloud authentication file, give the absolute file path that claude uses for authentication. `~/.config/gcloud/application_default_credentials.json`. DO NOT use the `~`. This will give pods the capability of using claude.
 
 ### Creating development space (RDU3)
 Once the cluster admin creates the user and its respective namespace and **only then** run `create_dev_user.sh`.  The following explain the content in case you want to do them individually. This script is for users to get started with their deployment pod.  The script will prompt the user for their Openshift username, path to the ssh private key file, and their gcloud authentication default json file.
