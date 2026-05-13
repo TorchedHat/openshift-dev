@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: restore-<username>
+  namespace: nfs-server
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 14400
+  template:
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: gx3d.160x1792.8h200
+      containers:
+      - name: restore
+        image: amazon/aws-cli:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+          aws configure set default.region ca-tor
+          echo "Starting restore for <username> at $(date)"
+          aws --endpoint-url https://s3.ca-tor.cloud-object-storage.appdomain.cloud \
+            s3 sync s3://pytorch-nfs-backup/<nfs_subdir>/ \
+            /dest/<nfs_subdir>/ \
+            --no-follow-symlinks \
+            --only-show-errors
+          echo "Restore completed at $(date)"
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: cos-backup-creds
+              key: access-key
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: cos-backup-creds
+              key: secret-key
+        volumeMounts:
+        - name: nfs-export
+          mountPath: /dest
+        resources:
+          requests:
+            cpu: "2"
+            memory: 4Gi
+          limits:
+            cpu: "4"
+            memory: 8Gi
+      restartPolicy: Never
+      volumes:
+      - name: nfs-export
+        nfs:
+          server: 172.21.58.217
+          path: /
