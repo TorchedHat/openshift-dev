@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nfs-backup-to-cos
+  namespace: nfs-server
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 14400
+      template:
+        spec:
+          nodeSelector:
+            node.kubernetes.io/instance-type: gx3d.160x1792.8h200
+          containers:
+          - name: backup
+            image: amazon/aws-cli:latest
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+              aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+              aws configure set default.region ca-tor
+              echo "Starting backup at $(date)"
+              aws --endpoint-url https://s3.ca-tor.cloud-object-storage.appdomain.cloud \
+                s3 sync /source/ s3://pytorch-nfs-backup/ \
+                --delete \
+                --no-follow-symlinks \
+                --only-show-errors
+              echo "Backup completed at $(date)"
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cos-backup-creds
+                  key: access-key
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cos-backup-creds
+                  key: secret-key
+            volumeMounts:
+            - name: nfs-export
+              mountPath: /source
+              readOnly: true
+            resources:
+              requests:
+                cpu: "1"
+                memory: 4Gi
+              limits:
+                cpu: "2"
+                memory: 8Gi
+          restartPolicy: OnFailure
+          volumes:
+          - name: nfs-export
+            nfs:
+              server: 172.21.58.217
+              path: /
+              readOnly: true

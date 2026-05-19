@@ -64,11 +64,11 @@ spec:
       containers:
         - resources:
             limits:
-              cpu: '8'
+              cpu: '4'
               memory: 32Gi
               nvidia.com/gpu: '1'
             requests:
-              cpu: '8'
+              cpu: '4'
               memory: 32Gi
               nvidia.com/gpu: '1'
           stdin: true
