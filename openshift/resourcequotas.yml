@@ -16,7 +16,7 @@ spec:
     requests.cpu: "16"
     requests.memory: 64Gi
     limits.cpu: "16"
-    limits.memory: 64Gi
+    limits.memory: 128Gi
 
     # Storage
     requests.storage: 300Gi

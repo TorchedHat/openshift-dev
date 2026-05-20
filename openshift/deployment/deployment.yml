@@ -64,7 +64,7 @@ spec:
       containers:
         - resources:
             limits:
-              cpu: '4'
+              cpu: '16'
               memory: 32Gi
               nvidia.com/gpu: '1'
             requests:
