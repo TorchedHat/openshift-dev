@@ -6,7 +6,10 @@ Download the CLI tools go this link: https://console.redhat.com/openshift/instal
 
 Install the `ibmcloud` binary with the following command.
 ```bash
+# for linux
 curl -fsSL https://clis.cloud.ibm.com/install/linux | sh
+# for macOS
+curl -fsSL https://clis.cloud.ibm.com/install/osx | sh
 ```
 
 ### IBMCloud cluster
@@ -17,7 +20,7 @@ a. If you get the error that says that plugin `ks` is not available, install the
 `ibmcloud plugin install kubernetes-service` and then rerun the above command.<br>
 3. Log in to the openshift cluster using `oc login --web`.
 4. Check if you have access by running `oc whoami`.
-5. (Non admins) Please refer to the [Users](Users) section to set up development.
+5. (Non admins) Please refer to the [Users](#users) section to set up development.
 
 ### RDU3 cluster ONLY!!! Update hosts file
 The Openshift cluster will have been made by Jetlag. There is no real load balancer or dns server that is making the cluster public so the user will have to add IP addresses to access the Openshift console via their web browser. Add the following to your `/etc/hosts` file.
