@@ -105,7 +105,7 @@ RUN chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn*
 # Install miniconda to /home/devuser/miniconda (single layer)
 ARG PY_VER
 ENV HOME=/home/devuser
-RUN curl -LO "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${OS_TYPE}.sh" \
+RUN curl -fLO --retry 3 --retry-delay 5 "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${OS_TYPE}.sh" \
     && bash Miniforge3-Linux-${OS_TYPE}.sh -p /home/devuser/miniconda -b \
     && rm Miniforge3-Linux-${OS_TYPE}.sh \
     && /home/devuser/miniconda/bin/conda update -y conda \
@@ -146,6 +146,7 @@ RUN cd /build_ray\
     && sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt\
     && sed -i '/tensordict/d' test-requirements.txt\
     && sed -i 's/opencv-python.*/opencv-python<4.10.0/' test-requirements.txt\
+    && sed -i '/numba/d' test-requirements.txt\
     && /home/devuser/miniconda/bin/pip install --no-cache-dir -r requirements.txt\
     -r test-requirements.txt\
     pre-commit\
