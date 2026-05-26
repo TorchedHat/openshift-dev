@@ -17,7 +17,7 @@ spec:
       spec:
         containers:
         - name: ray-head
-          image: quay.io/rh-ee-sampark/devcontainers:latest
+          image: quay.io/rh-ee-sampark/devcontainers:py3.10
           imagePullPolicy: Always
           resources:
             limits:
@@ -62,9 +62,9 @@ spec:
                 fieldPath: status.podIP
           volumeMounts:
             - name: pytorch-eco-data
-              mountPath: /root
+              mountPath: /home/devuser
             - name: gdbinit
-              mountPath: /root/.gdbinit
+              mountPath: /home/devuser/.gdbinit
               subPath: .gdbinit
             - name: dshm
               mountPath: /dev/shm
@@ -94,7 +94,7 @@ spec:
       spec:
         containers:
         - name: ray-worker
-          image: quay.io/rh-ee-sampark/devcontainers:latest
+          image: quay.io/rh-ee-sampark/devcontainers:py3.10
           imagePullPolicy: Always
           resources:
             limits:
@@ -105,9 +105,9 @@ spec:
               memory: 50Gi
           volumeMounts:
             - name: pytorch-eco-data
-              mountPath: /root
+              mountPath: /home/devuser
             - name: gdbinit
-              mountPath: /root/.gdbinit
+              mountPath: /home/devuser/.gdbinit
               subPath: .gdbinit
             - name: dshm
               mountPath: /dev/shm

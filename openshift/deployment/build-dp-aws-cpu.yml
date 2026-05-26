@@ -43,13 +43,13 @@ spec:
             medium: Memory
       initContainers:
         - name: init-container
-          image: 'quay.io/rh-ee-sampark/devcontainers:latest'
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
           command:
             - /bin/bash
             - -c
             - |
               if [ ! -d /mnt/data/miniconda ]; then
-                cp -a /root/. /mnt/data/
+                cp -a /home/devuser/. /mnt/data/
               fi
           volumeMounts:
             - name: pytorch-eco-data
@@ -76,29 +76,29 @@ spec:
           imagePullPolicy: Always
           volumeMounts:
             - name: pytorch-eco-data
-              mountPath: /root
+              mountPath: /home/devuser
             - name: ssh-key
               readOnly: true
-              mountPath: /root/.ssh
+              mountPath: /home/devuser/.ssh
             - name: gcloud-config
               readOnly: true
-              mountPath: /root/.config/gcloud
+              mountPath: /home/devuser/.config/gcloud
             - name: bazelrc
-              mountPath: /root/.bazelrc
+              mountPath: /home/devuser/.bazelrc
               subPath: .bazelrc
             - name: gdbinit
-              mountPath: /root/.gdbinit
+              mountPath: /home/devuser/.gdbinit
               subPath: .gdbinit
             - name: dshm
               mountPath: /dev/shm
           terminationMessagePolicy: File
           tty: true
-          image: 'quay.io/rh-ee-sampark/devcontainers:latest'
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
       dnsPolicy: ClusterFirst
       securityContext:
-        runAsUser: 0
+        runAsUser: 1000
         runAsGroup: 0
       imagePullSecrets:
         - name: rh-ee-sampark-dev-bot-pull-secret
