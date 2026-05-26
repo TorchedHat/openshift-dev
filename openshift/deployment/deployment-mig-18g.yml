@@ -24,11 +24,11 @@ spec:
                 path: id_ed25519.pub
               - key: known_hosts
                 path: known_hosts
-            defaultMode: 0600
+            defaultMode: 0640
         - name: gcloud-config
           secret:
             secretName: <username>-gcloud-config
-            defaultMode: 0600
+            defaultMode: 0640
         - name: pytorch-eco-data
           persistentVolumeClaim:
             claimName: pytorch-ibmc-storage-<username>
