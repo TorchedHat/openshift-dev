@@ -147,6 +147,7 @@ RUN cd /build_ray\
     && sed -i '/tensordict/d' test-requirements.txt\
     && sed -i 's/opencv-python.*/opencv-python<4.10.0/' test-requirements.txt\
     && sed -i '/numba/d' test-requirements.txt\
+    && sed -i '/pygame/d' test-requirements.txt\
     && /home/devuser/miniconda/bin/pip install --no-cache-dir -r requirements.txt\
     -r test-requirements.txt\
     pre-commit\
