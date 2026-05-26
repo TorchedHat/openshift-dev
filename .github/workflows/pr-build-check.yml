@@ -8,12 +8,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - name: Build image
+      - name: Build image (Python ${{ matrix.python-version }})
         uses: docker/build-push-action@v7
         with:
           context: .
           file: .devcontainer/Dockerfile
           push: false
+          build-args: PY_VER=${{ matrix.python-version }}

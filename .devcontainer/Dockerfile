@@ -12,8 +12,11 @@ ARG CONDA_VER
 ARG OS_TYPE
 ARG FEDORA_VERSION
 
-# Run as root for now (Podman devcontainers are rootless by default, so this is okay)
+# Run as root for system-level installs
 USER root
+
+# Create non-root user (GID 0 follows OpenShift convention for random UID support)
+RUN useradd -u 1000 -g 0 -m -d /home/devuser -s /bin/bash devuser
 
 # Add google cloud cli repo
 RUN printf "[google-cloud-cli]\n\
@@ -50,16 +53,17 @@ RUN dnf upgrade --refresh -y && \
         tar \
         htop \
         nix \
-        nodejs && \
+        nodejs \
+        sudo && \
     dnf clean all
 
 # Enable Nix flakes
-RUN mkdir -p /root/.config/nix \
-    && echo 'experimental-features = nix-command flakes' > /root/.config/nix/nix.conf
+RUN mkdir -p /home/devuser/.config/nix \
+    && echo 'experimental-features = nix-command flakes' > /home/devuser/.config/nix/nix.conf
 
 RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo && dnf install gh --repo gh-cli -y && dnf clean all
 
-RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
+RUN mkdir -p -m 0700 /home/devuser/.ssh && ssh-keyscan github.com >> /home/devuser/.ssh/known_hosts
 
 # Install gcc c++ (may change for new versions). Also installs gcc.
 # fedora 41 does not link gcc and g++ for version 13 — add manually.
@@ -98,16 +102,17 @@ RUN mkdir ./cudnn \
 #Update file permissions
 RUN chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn*
 
-# Install miniconda to /root/miniconda (single layer)
+# Install miniconda to /home/devuser/miniconda (single layer)
 ARG PY_VER
+ENV HOME=/home/devuser
 RUN curl -LO "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${OS_TYPE}.sh" \
-    && bash Miniforge3-Linux-${OS_TYPE}.sh -p /root/miniconda -b \
+    && bash Miniforge3-Linux-${OS_TYPE}.sh -p /home/devuser/miniconda -b \
     && rm Miniforge3-Linux-${OS_TYPE}.sh \
-    && /root/miniconda/bin/conda update -y conda \
-    && /root/miniconda/bin/conda init \
-    && /root/miniconda/bin/conda install -c anaconda -y python=${PY_VER} gdb cuda-gdb \
-    && /root/miniconda/bin/conda clean -afy
-ENV PATH=/root/miniconda/bin:${PATH}
+    && /home/devuser/miniconda/bin/conda update -y conda \
+    && /home/devuser/miniconda/bin/conda init \
+    && /home/devuser/miniconda/bin/conda install -c anaconda -y python=${PY_VER} gdb cuda-gdb \
+    && /home/devuser/miniconda/bin/conda clean -afy
+ENV PATH=/home/devuser/miniconda/bin:${PATH}
 
 #Install torch requirements.
 ARG PYTORCH_RAW=https://raw.githubusercontent.com/pytorch/pytorch/refs/heads/main
@@ -116,7 +121,7 @@ RUN mkdir /build_pytorch
 ADD ${PYTORCH_RAW}/requirements.txt /build_pytorch/requirements.txt
 ADD ${PYTORCH_RAW}/requirements-build.txt /build_pytorch/requirements-build.txt
 ADD ${PYTORCH_RAW}/Makefile /build_pytorch/Makefile
-RUN /root/miniconda/bin/pip install --no-cache-dir -r /build_pytorch/requirements.txt mkl-static mkl-include
+RUN /home/devuser/miniconda/bin/pip install --no-cache-dir -r /build_pytorch/requirements.txt mkl-static mkl-include
 
 #Install triton.
 RUN mkdir /build_pytorch/scripts
@@ -141,11 +146,11 @@ RUN cd /build_ray\
     && sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt\
     && sed -i '/tensordict/d' test-requirements.txt\
     && sed -i 's/opencv-python.*/opencv-python<4.10.0/' test-requirements.txt\
-    && /root/miniconda/bin/pip install --no-cache-dir -r requirements.txt\
+    && /home/devuser/miniconda/bin/pip install --no-cache-dir -r requirements.txt\
     -r test-requirements.txt\
     pre-commit\
-    && (/root/miniconda/bin/pip uninstall torch -y 2>/dev/null || true)\
-    && /root/miniconda/bin/pip install --no-cache-dir "numpy>=1.24,<1.27"\
+    && (/home/devuser/miniconda/bin/pip uninstall torch -y 2>/dev/null || true)\
+    && /home/devuser/miniconda/bin/pip install --no-cache-dir "numpy>=1.24,<1.27"\
     && rm -rf /build_ray
 ADD ${RAY_RAW}/.bazelversion /build_ray/.bazelversion
 RUN BAZEL_VER=$(cat /build_ray/.bazelversion | tr -d '[:space:]')\
@@ -155,7 +160,7 @@ RUN BAZEL_VER=$(cat /build_ray/.bazelversion | tr -d '[:space:]')\
     && rm -f "bazel-${BAZEL_VER}-installer-linux-x86_64.sh"\
     && rm -rf /build_ray
 # set RAM and CPU limits for the ray build
-RUN echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25 --disk_cache=~/bazel-cache" >> /root/.bazelrc
+RUN echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25 --disk_cache=/home/devuser/bazel-cache" >> /home/devuser/.bazelrc
 
 # install claude
 RUN curl -fsSL https://claude.ai/install.sh | bash
@@ -165,17 +170,25 @@ RUN rm -f /usr/bin/gcc /usr/bin/g++ && \
     ln -s /usr/bin/gcc-13 /usr/bin/gcc && \
     ln -s /usr/bin/g++-13 /usr/bin/g++
 
+# Ensure devuser owns home and group can write (OpenShift random UID is in GID 0)
+# Allow devuser to install system packages at runtime via sudo (e.g. sudo dnf install ...)
+RUN echo "devuser ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/devuser \
+    && chmod 0440 /etc/sudoers.d/devuser \
+    && chown -R devuser:0 /home/devuser && chmod -R g=u /home/devuser
+
 # set env variables
 ENV CLAUDE_CODE_USE_VERTEX=1 \
     CLOUD_ML_REGION=global \
     ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude \
-    USER=root \
+    USER=devuser \
     NVCC_CCBIN=g++-13 \
     PATH="/usr/local/cuda-12.9/bin:${PATH}" \
     CUDA_HOME=/usr/local/cuda-12.9 \
     CC=gcc-13 \
     CXX=g++-13 \
     MAX_JOBS=25 \
-    CMAKE_PREFIX_PATH=/root/miniconda \
+    CMAKE_PREFIX_PATH=/home/devuser/miniconda \
     RAY_INSTALL_CPP=0 \
     RAY_DEBUG_BUILD=debug
+
+USER 1000
