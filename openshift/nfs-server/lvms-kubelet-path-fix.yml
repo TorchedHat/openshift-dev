@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: lvms-kubelet-path-fix
+  namespace: openshift-lvm-storage
+  labels:
+    app: lvms-kubelet-path-fix
+spec:
+  selector:
+    matchLabels:
+      app: lvms-kubelet-path-fix
+  template:
+    metadata:
+      labels:
+        app: lvms-kubelet-path-fix
+    spec:
+      serviceAccountName: vg-manager
+      hostPID: true
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.kubernetes.io/instance-type
+                    operator: In
+                    values:
+                      - gx3d.160x1792.8h200
+      containers:
+        - name: fix
+          image: quay.io/fedora/fedora-minimal:41
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                PID=""
+                for f in $(grep -rl "^lvms$" /proc/[0-9]*/comm 2>/dev/null); do
+                  p=$(echo "$f" | cut -d/ -f3)
+                  if grep -qz "vgmanager" /proc/$p/cmdline 2>/dev/null; then
+                    PID=$p
+                    break
+                  fi
+                done
+                if [ -n "$PID" ]; then
+                  nsenter --mount=/proc/$PID/ns/mnt -- sh -c \
+                    "mkdir -p /var/data && ln -sfn /var/lib/kubelet /var/data/kubelet" 2>/dev/null
+                  if [ $? -eq 0 ]; then
+                    echo "$(date): symlink verified in vg-manager (pid $PID)"
+                  else
+                    echo "$(date): failed to create symlink in vg-manager (pid $PID)"
+                  fi
+                else
+                  echo "$(date): vg-manager process not found, waiting..."
+                fi
+                sleep 30
+              done
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+      terminationGracePeriodSeconds: 5

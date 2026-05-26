@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nfs-rootless-test
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-sa
+  namespace: nfs-rootless-test
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nfs-setup-permissions
+  namespace: nfs-rootless-test
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      serviceAccountName: test-sa
+      nodeSelector:
+        node.kubernetes.io/instance-type: gx3d.160x1792.8h200
+      securityContext:
+        runAsUser: 0
+      containers:
+      - name: setup
+        image: quay.io/fedora/fedora-minimal:41
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "=== Setting up test directory ==="
+          mkdir -p /nfs/test-rootless
+          echo "root-created-file" > /nfs/test-rootless/root-file.txt
+
+          echo "Before permission change:"
+          ls -la /nfs/test-rootless/
+
+          chgrp -R 0 /nfs/test-rootless
+          chmod -R g+rwX /nfs/test-rootless
+          chmod 2775 /nfs/test-rootless
+
+          echo ""
+          echo "After permission change:"
+          ls -la /nfs/test-rootless/
+          echo ""
+          echo "=== Setup complete ==="
+        volumeMounts:
+        - name: nfs
+          mountPath: /nfs
+      volumes:
+      - name: nfs
+        nfs:
+          server: 172.21.58.217
+          path: /
+      restartPolicy: Never
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nfs-test-root-write
+  namespace: nfs-rootless-test
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      serviceAccountName: test-sa
+      nodeSelector:
+        node.kubernetes.io/instance-type: gx3d.160x1792.8h200
+      securityContext:
+        runAsUser: 0
+      containers:
+      - name: root-writer
+        image: quay.io/fedora/fedora-minimal:41
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "=== Root write test (UID 0) ==="
+          id
+          echo "root-pod-wrote-this-$(date +%s)" > /nfs/test-rootless/root-pod.txt && \
+            echo "PASS: root write succeeded" || echo "FAIL: root write failed"
+          ls -la /nfs/test-rootless/
+        volumeMounts:
+        - name: nfs
+          mountPath: /nfs
+      volumes:
+      - name: nfs
+        nfs:
+          server: 172.21.58.217
+          path: /
+      restartPolicy: Never
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nfs-test-nonroot-write
+  namespace: nfs-rootless-test
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      serviceAccountName: test-sa
+      nodeSelector:
+        node.kubernetes.io/instance-type: gx3d.160x1792.8h200
+      securityContext:
+        runAsUser: 1000920000
+        runAsGroup: 0
+        supplementalGroups: [0]
+      containers:
+      - name: nonroot-writer
+        image: quay.io/fedora/fedora-minimal:41
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "=== Non-root write test (random UID, GID 0) ==="
+          id
+          echo "nonroot-pod-wrote-this-$(date +%s)" > /nfs/test-rootless/nonroot-pod.txt && \
+            echo "PASS: non-root write succeeded" || echo "FAIL: non-root write failed"
+
+          echo "Reading root's file:"
+          cat /nfs/test-rootless/root-file.txt && \
+            echo "PASS: non-root read succeeded" || echo "FAIL: non-root read failed"
+
+          echo ""
+          echo "Creating subdirectory:"
+          mkdir -p /nfs/test-rootless/subdir && \
+            echo "test-in-subdir" > /nfs/test-rootless/subdir/file.txt && \
+            echo "PASS: non-root mkdir+write succeeded" || echo "FAIL: non-root mkdir+write failed"
+
+          echo ""
+          echo "Final listing:"
+          ls -laR /nfs/test-rootless/
+        volumeMounts:
+        - name: nfs
+          mountPath: /nfs
+      volumes:
+      - name: nfs
+        nfs:
+          server: 172.21.58.217
+          path: /
+      restartPolicy: Never
