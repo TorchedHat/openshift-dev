@@ -142,17 +142,19 @@ ADD ${RAY_RAW}/python/requirements.txt /build_ray/requirements.txt
 ADD ${RAY_RAW}/python/requirements/test-requirements.txt /build_ray/test-requirements.txt
 ADD ${RAY_RAW}/python/requirements_compiled.txt /build_ray/requirements_compiled.txt
 
-RUN cd /build_ray\
-    && sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt\
-    && sed -i '/tensordict/d' test-requirements.txt\
-    && sed -i 's/opencv-python.*/opencv-python<4.10.0/' test-requirements.txt\
-    && sed -i '/numba/d' test-requirements.txt\
-    && sed -i '/pygame/d' test-requirements.txt\
-    && /home/devuser/miniconda/bin/pip install --no-cache-dir -r requirements.txt\
-    -r test-requirements.txt\
-    pre-commit\
-    && (/home/devuser/miniconda/bin/pip uninstall torch -y 2>/dev/null || true)\
-    && /home/devuser/miniconda/bin/pip install --no-cache-dir "numpy>=1.24,<1.27"\
+RUN PY_MINOR=$(/home/devuser/miniconda/bin/python -c "import sys; print(sys.version_info.minor)") \
+    && cd /build_ray \
+    && if [ "$PY_MINOR" -lt 13 ]; then \
+         sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt \
+         && sed -i '/tensordict/d' test-requirements.txt \
+         && sed -i 's/opencv-python.*/opencv-python<4.10.0/' test-requirements.txt \
+         && /home/devuser/miniconda/bin/pip install --no-cache-dir -r requirements.txt \
+            -r test-requirements.txt pre-commit; \
+       else \
+         /home/devuser/miniconda/bin/pip install --no-cache-dir -r requirements.txt pre-commit; \
+       fi \
+    && (/home/devuser/miniconda/bin/pip uninstall torch -y 2>/dev/null || true) \
+    && /home/devuser/miniconda/bin/pip install --no-cache-dir "numpy>=1.24,<1.27" \
     && rm -rf /build_ray
 ADD ${RAY_RAW}/.bazelversion /build_ray/.bazelversion
 RUN BAZEL_VER=$(cat /build_ray/.bazelversion | tr -d '[:space:]')\
