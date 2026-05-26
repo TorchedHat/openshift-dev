@@ -174,6 +174,9 @@ RUN rm -f /usr/bin/gcc /usr/bin/g++ && \
     ln -s /usr/bin/gcc-13 /usr/bin/gcc && \
     ln -s /usr/bin/g++-13 /usr/bin/g++
 
+# NFS files may be owned by a different UID than the container user
+RUN git config --system --add safe.directory '*'
+
 # Ensure devuser owns home and group can write (OpenShift random UID is in GID 0)
 # Allow devuser to install system packages at runtime via sudo (e.g. sudo dnf install ...)
 RUN echo "devuser ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/devuser \
