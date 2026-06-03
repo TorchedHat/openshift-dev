@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: rdma-shared-dp-ds
+  namespace: nvidia-gpu-operator
+spec:
+  selector:
+    matchLabels:
+      name: rdma-shared-dp-ds
+  template:
+    metadata:
+      labels:
+        name: rdma-shared-dp-ds
+    spec:
+      serviceAccountName: rdma-shared-dp
+      hostNetwork: true
+      priorityClassName: system-node-critical
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: k8s-rdma-shared-dp
+          image: ghcr.io/mellanox/k8s-rdma-shared-dev-plugin:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 50Mi
+            limits:
+              cpu: 300m
+              memory: 150Mi
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+              readOnly: false
+            - name: plugins-registry
+              mountPath: /var/lib/kubelet/plugins_registry
+              readOnly: false
+            - name: config
+              mountPath: /k8s-rdma-shared-dev-plugin
+            - name: devinfiniband
+              mountPath: /dev/infiniband
+              readOnly: true
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: plugins-registry
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry
+        - name: config
+          configMap:
+            name: rdma-devices
+            items:
+              - key: config.json
+                path: config.json
+        - name: devinfiniband
+          hostPath:
+            path: /dev/infiniband
