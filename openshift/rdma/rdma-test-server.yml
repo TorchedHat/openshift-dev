@@ -1,0 +1,67 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: rdma-test-server
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rdma-test-server
+  template:
+    metadata:
+      labels:
+        app: rdma-test-server
+    spec:
+      nodeName: pytorch-openshift-tjqvv-worker-3-h72vf
+      containers:
+        - name: server
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
+          command:
+            - /bin/bash
+            - -c
+            - |
+              sudo dnf install -y rdma-core libibverbs-utils perftest && \
+              echo "=== RDMA tools installed ===" && \
+              echo "=== RDMA devices ===" && \
+              ibv_devinfo -v | grep -E "hca_id|state|link_layer" && \
+              echo "=== GPU check ===" && \
+              nvidia-smi -L && \
+              echo "Ready. Run: ib_write_bw --report_gbits -d mlx5_0" && \
+              sleep infinity
+          stdin: true
+          tty: true
+          resources:
+            requests:
+              cpu: '1'
+              memory: 4Gi
+              nvidia.com/gpu: '1'
+              rdma/rdma_shared_device_a: '1'
+            limits:
+              cpu: '4'
+              memory: 8Gi
+              nvidia.com/gpu: '1'
+              rdma/rdma_shared_device_a: '1'
+          env:
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            - name: NCCL_NET_GDR_LEVEL
+              value: "5"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 0
+      imagePullSecrets:
+        - name: rh-ee-sampark-dev-bot-pull-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rdma-test-server
+  namespace: default
+spec:
+  clusterIP: None
+  selector:
+    app: rdma-test-server
+  ports:
+    - port: 18515
+      targetPort: 18515
