@@ -1,0 +1,45 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 98-var-lib-containers-nvme
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    systemd:
+      units:
+        - name: format-nvme-containers.service
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Format NVMe for container storage if needed
+            DefaultDependencies=no
+            After=systemd-udevd.service
+            Before=var-lib-containers.mount
+
+            [Service]
+            Type=oneshot
+            ExecStart=/bin/bash -c 'blkid -s TYPE -o value /dev/nvme0n1 | grep -q xfs || mkfs.xfs -f /dev/nvme0n1'
+            RemainAfterExit=yes
+
+            [Install]
+            WantedBy=local-fs.target
+        - name: var-lib-containers.mount
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Mount NVMe for container storage
+            DefaultDependencies=no
+            After=format-nvme-containers.service
+            Before=local-fs.target crio.service kubelet.service
+
+            [Mount]
+            What=/dev/nvme0n1
+            Where=/var/lib/containers
+            Type=xfs
+            Options=defaults,noatime,prjquota
+
+            [Install]
+            WantedBy=local-fs.target
