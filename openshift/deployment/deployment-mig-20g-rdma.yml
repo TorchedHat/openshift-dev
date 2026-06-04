@@ -48,9 +48,7 @@ spec:
             - /bin/bash
             - -c
             - |
-              if [ ! -d /mnt/data/miniconda ]; then
-                cp -r --no-preserve=all /home/devuser/. /mnt/data/
-              fi
+              cp -rn --no-preserve=ownership /home/devuser/. /mnt/data/
           resources:
             limits:
               cpu: 500m
@@ -125,6 +123,7 @@ spec:
       securityContext:
         runAsUser: 1000
         runAsGroup: 0
+        fsGroup: 0
       imagePullSecrets:
         - name: rh-ee-sampark-dev-bot-pull-secret
       schedulerName: default-scheduler

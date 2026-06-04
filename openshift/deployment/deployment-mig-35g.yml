@@ -48,9 +48,7 @@ spec:
             - /bin/bash
             - -c
             - |
-              if [ ! -d /mnt/data/miniconda ]; then
-                cp -r --no-preserve=all /home/devuser/. /mnt/data/
-              fi
+              cp -rn --no-preserve=ownership /home/devuser/. /mnt/data/
           resources:
             limits:
               cpu: 500m

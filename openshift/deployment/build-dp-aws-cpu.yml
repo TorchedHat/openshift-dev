@@ -48,9 +48,7 @@ spec:
             - /bin/bash
             - -c
             - |
-              if [ ! -d /mnt/data/miniconda ]; then
-                cp -a /home/devuser/. /mnt/data/
-              fi
+              cp -rn --no-preserve=ownership /home/devuser/. /mnt/data/
           volumeMounts:
             - name: pytorch-eco-data
               mountPath: /mnt/data
