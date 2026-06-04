@@ -1,8 +1,31 @@
 #!/bin/bash
 
-read -p "Enter IAM email (e.g. IAM#user@example.com): " EMAIL
-USERNAME="${EMAIL#*#}"
-USERNAME="${USERNAME%@*}"
+echo "Select auth type:"
+echo "  1) IBM Cloud IAM"
+echo "  2) GitHub"
+read -p "Choice [1/2]: " AUTH_CHOICE
+
+if [ "$AUTH_CHOICE" = "1" ]; then
+  CLUSTER_URL=$(oc whoami --show-server 2>/dev/null)
+  if ! echo "$CLUSTER_URL" | grep -q "containers.cloud.ibm.com"; then
+    echo "ERROR: IBM Cloud IAM is only supported on ROKS clusters (current: $CLUSTER_URL)"
+    exit 1
+  fi
+  read -p "Enter IAM email (e.g. IAM#user@example.com): " EMAIL
+  USERNAME="${EMAIL#*#}"
+  USERNAME="${USERNAME%@*}"
+  IDENTITY="$EMAIL"
+elif [ "$AUTH_CHOICE" = "2" ]; then
+  if ! oc get oauth cluster -o jsonpath='{.spec.identityProviders[*].type}' 2>/dev/null | grep -q GitHub; then
+    echo "ERROR: GitHub auth is not configured on this cluster"
+    exit 1
+  fi
+  read -p "Enter GitHub username: " USERNAME
+  IDENTITY="$USERNAME"
+else
+  echo "ERROR: Invalid choice"
+  exit 1
+fi
 
 # create namespace for the user
 oc apply -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
@@ -11,13 +34,20 @@ oc apply -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
 oc adm policy add-scc-to-user anyuid -z default -n $USERNAME
 
 # Apply edit role to the user to allow them to create resources in their namespace.
-oc adm policy add-role-to-user edit $EMAIL -n $USERNAME
+oc adm policy add-role-to-user edit "$IDENTITY" -n $USERNAME
 
 # create RBAC for the user
-oc apply -f <(sed -e "s/<username>/$USERNAME/g" -e "s/<email>/$EMAIL/g" rbac.yml)
+oc apply -f <(sed -e "s/<username>/$USERNAME/g" -e "s/<email>/$IDENTITY/g" rbac.yml)
 
-# create PVC for the user
-oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/pytorch-nfs-rwx-pvc.yml)
+# create PVC for the user (auto-detect storage class)
+if oc get sc ocs-storagecluster-cephfs &>/dev/null; then
+  oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/persistent-workspace-pvc.yml)
+elif oc get sc nfs-rwx &>/dev/null; then
+  oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/pytorch-nfs-rwx-pvc.yml)
+else
+  echo "ERROR: No supported RWX storage class found (nfs-rwx or ocs-storagecluster-cephfs)"
+  exit 1
+fi
 
 # push quay image secret to pull image from quay
 oc apply -f <(sed "s/<username>/$USERNAME/g" rh-ee-sampark-dev-bot-secret.yml)
