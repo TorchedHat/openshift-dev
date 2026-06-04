@@ -1,12 +1,6 @@
 #!/bin/bash
 
-if [ -z "$1" ]; then
-  echo "Usage: $0 <username>"
-  echo "Example: $0 trichmon"
-  exit 1
-fi
-
-USERNAME="$1"
+read -p "Enter username to restore: " USERNAME
 
 PVC_NAME=$(oc get pvc -n "$USERNAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 if [ -z "$PVC_NAME" ]; then

@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cephfs-restore-<username>
+  namespace: <username>
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 14400
+  template:
+    spec:
+      containers:
+      - name: restore
+        image: registry.redhat.io/rhceph/rhceph-9-rhel9@sha256:ad4a6277b33df016fb7444fc729b59a8ecc78cd689f9607ff80c553ec52285ad
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          export HOME=/tmp
+
+          # install aws cli
+          python3 -m ensurepip > /dev/null 2>&1
+          python3 -m pip install awscli > /dev/null 2>&1
+
+          # configure aws
+          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+          aws configure set default.region us-east-3
+
+          echo "Starting restore for <username> at $(date)"
+          aws --endpoint-url https://s3.us-east.cloud-object-storage.appdomain.cloud \
+            s3 sync s3://pytorch-cephfs-backup/<subvolume_path>/ /dest/ \
+            --no-follow-symlinks \
+            --only-show-errors
+          echo "Restore completed at $(date)"
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: cos-backup-creds
+              key: access-key
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: cos-backup-creds
+              key: secret-key
+        volumeMounts:
+        - name: user-data
+          mountPath: /dest
+        resources:
+          requests:
+            cpu: "2"
+            memory: 4Gi
+          limits:
+            cpu: "4"
+            memory: 8Gi
+      restartPolicy: Never
+      volumes:
+      - name: user-data
+        persistentVolumeClaim:
+          claimName: pytorch-ibmc-storage-<username>
