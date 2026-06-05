@@ -13,6 +13,7 @@ spec:
       labels:
         app: <username>-mig-20g-rdma-dev
     spec:
+      runtimeClassName: nvidia-cdi
       volumes:
         - name: ssh-key
           secret:

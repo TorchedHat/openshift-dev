@@ -13,6 +13,7 @@ spec:
       labels:
         app: <username>-mig-35g-dev
     spec:
+      runtimeClassName: nvidia-cdi
       volumes:
         - name: ssh-key
           secret:
