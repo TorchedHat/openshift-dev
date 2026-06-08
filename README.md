@@ -22,16 +22,6 @@ a. If you get the error that says that plugin `ks` is not available, install the
 4. Check if you have access by running `oc whoami`.
 5. (Non admins) Please refer to the [Users](#users) section to set up development.
 
-### RDU3 cluster ONLY!!! Update hosts file
-The Openshift cluster will have been made by Jetlag. There is no real load balancer or dns server that is making the cluster public so the user will have to add IP addresses to access the Openshift console via their web browser. Add the following to your `/etc/hosts` file.
-
-```bash
-10.6.62.23    api.mno.example.com
-10.6.62.23    oauth-openshift.apps.mno.example.com
-10.6.62.23    console-openshift-console.apps.mno.example.com
-```
-Once you have added these mappings and have the binaries, go to `console-openshift-console.apps.mno.example.com` to get started!
-
 ## Admin
 ### Adding Users (ibmcloud)
 1. Invite newly created user to the group. `ibmcloud account user-invite user@email.com`
@@ -86,7 +76,7 @@ Run `create_dev_admin.sh` (The following explain the content in case you want to
 
 ## Users
 
-### Creating development space (ibmcloud)
+### IBM Cloud pre-requisites
 Follow steps 1-3 if there is no kubeconfig file in `$HOME/.kube/config`. If already done, skip to step 4 and make sure that you have logged in to openshift with `oc login --web`.
 1. Create an IBM cloud account by going to https://cloud.ibm.com. Use your Red Hat email.
 2. Join the cluster group through an invite link sent by an admin.
@@ -98,8 +88,8 @@ b. When prompted for the username, use NAME from your email: NAME@redhat.com and
 c. When prompted for ssh private key file, give the absolute file path to your ssh key that is registered in your github account. I.E. `/home/user/.ssh/id_ed25519`. DO NOT use the `~`.<br>
 d. When prompted for your gcloud authentication file, give the absolute file path that claude uses for authentication. `~/.config/gcloud/application_default_credentials.json`. DO NOT use the `~`. This will give pods the capability of using claude.
 
-### Creating development space (RDU3)
-Once the cluster admin creates the user and its respective namespace and **only then** run `create_dev_user.sh`.  The following explain the content in case you want to do them individually. This script is for users to get started with their deployment pod.  The script will prompt the user for their Openshift username, path to the ssh private key file, and their gcloud authentication default json file.
+### Creating development space
+Once the cluster admin creates the user and its respective namespace and **only then** run `create_dev_user.sh`.  The script will prompt the user for OAuth type. Select the appropriate type. The following explain the content in case you want to do them individually. This script is for users to get started with their deployment pod.  The script will prompt the user for their Openshift username, path to the ssh private key file, and their gcloud authentication default json file.
 
   1. Create openshift secret for git-ssh-key.
 ```bash
