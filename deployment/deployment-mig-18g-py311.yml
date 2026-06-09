@@ -50,6 +50,7 @@ spec:
             - -c
             - |
               cp -rn --no-preserve=ownership /home/devuser/. /mnt/data/
+              chmod +x /mnt/data/.local/share/claude/versions/*/claude-code /mnt/data/.local/bin/claude 2>/dev/null || true
           resources:
             limits:
               cpu: 500m
