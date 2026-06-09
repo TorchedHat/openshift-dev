@@ -20,25 +20,22 @@ across pod restarts.
 
 ### 1. Create secrets
 
-Replace `<username>` with your OpenShift username (e.g. `alice`).
+Run the existing user setup script from the repo root. It will prompt for
+your username, SSH key path, and gcloud credentials path:
 
 ```bash
-oc create secret generic <username>-git-ssh-key \
-  --namespace=<username> \
-  --from-file=ssh-privatekey=$HOME/.ssh/id_ed25519 \
-  --from-file=ssh-publickey=$HOME/.ssh/id_ed25519.pub \
-  --from-file=known_hosts=<(ssh-keyscan github.com 2>/dev/null)
-
-oc create secret generic <username>-gcloud-config \
-  --namespace=<username> \
-  --from-file=$HOME/.config/gcloud/application_default_credentials.json
+./create_dev_user.sh
 ```
+
+This creates the `<username>-git-ssh-key` and `<username>-gcloud-config`
+secrets in your namespace. You can skip the deployment step at the end --
+the Helm chart handles that.
 
 **Important:** The SSH key must be the one registered on your GitHub account.
 Verify with `ssh -T git@github.com` -- it should print
 `Hi <your-username>! You've successfully authenticated`. If your SSH agent
-uses a different key than `~/.ssh/id_ed25519`, use the path to the correct
-key file instead.
+uses a different key than the key file you provide, the settings repo clone
+will fail. See [Troubleshooting](#ssh-key-rejected-during-init) below.
 
 ### 2. Deploy
 
