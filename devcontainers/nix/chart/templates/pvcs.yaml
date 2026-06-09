@@ -1,0 +1,42 @@
+{{- include "devcontainers.validate" . -}}
+{{- if eq .Values.track "nix" -}}
+
+{{- if .Values.storage.home.create }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "devcontainers.homeClaim" . }}
+  namespace: {{ include "devcontainers.namespace" . }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "devcontainers.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: {{ .Values.storage.home.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.home.size }}
+{{- end }}
+
+{{- if .Values.storage.nixCache.create }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "devcontainers.nixCacheClaim" . }}
+  namespace: {{ include "devcontainers.namespace" . }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "devcontainers.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: {{ .Values.storage.nixCache.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.nixCache.size }}
+{{- end }}
+
+{{- end }}

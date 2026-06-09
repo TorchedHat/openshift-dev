@@ -1,0 +1,13 @@
+gpu:
+  enabled: false
+
+resources:
+  requests:
+    cpu: "8"
+    memory: 48Gi
+  limits:
+    cpu: "8"
+    memory: 48Gi
+
+env:
+  MAX_JOBS: "4"

@@ -1,0 +1,11 @@
+# Patterns to ignore when building helm packages.
+.git
+.gitignore
+*.swp
+*.bak
+*.tmp
+.DS_Store
+
+# Profiles are user-facing documentation; included in the repo but
+# not needed inside a packaged chart since users pass them via -f.
+profiles/
