@@ -1,0 +1,4 @@
+gpu:
+  type: nvidia.com/mig-2g.35gb
+  count: 1
+  runtimeClassName: ""

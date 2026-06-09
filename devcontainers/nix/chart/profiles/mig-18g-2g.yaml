@@ -1,0 +1,4 @@
+gpu:
+  type: nvidia.com/mig-1g.18gb
+  count: 2
+  runtimeClassName: nvidia-cdi
