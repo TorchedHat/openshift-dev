@@ -33,6 +33,9 @@ oc apply -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
 # Apply anyuid to bypass SCC.
 oc adm policy add-scc-to-user anyuid -z default -n $USERNAME
 
+# Allow IPC_LOCK for RDMA memory registration (ibv_reg_mr).
+oc adm policy add-scc-to-user anyuid-ipc-lock -z default -n $USERNAME
+
 # Apply edit role to the user to allow them to create resources in their namespace.
 oc adm policy add-role-to-user edit "$IDENTITY" -n $USERNAME
 

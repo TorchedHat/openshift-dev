@@ -72,6 +72,9 @@ spec:
               memory: 64Gi
               nvidia.com/gpu: '1'
               rdma/rdma_shared_device_a: '1'
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
           stdin: true
           terminationMessagePath: /dev/termination-log
           name: container
