@@ -58,6 +58,47 @@ oc delete -f rdma-test-server.yml
 oc delete -f rdma-test-client.yml
 ```
 
+## RDMA Transport: NCCL vs UCX
+
+Not all RDMA consumers work the same way in containers. The key difference
+is how they resolve the network interface associated with an RDMA device.
+
+### NCCL (PyTorch DDP/FSDP, Ray Train)
+
+NCCL has its own IB verbs transport that reads addresses directly from the
+GID table. It does **not** need the host network interfaces (`enp*`) to be
+visible in the pod. Standard pod networking with the RDMA shared device
+plugin (`rdma/rdma_shared_device_a`) is sufficient.
+
+### UCX (vLLM/NIXL, OpenMPI, RAPIDS/Dask)
+
+UCX resolves RDMA device addresses by looking up the corresponding network
+interface in `/sys/class/net/`. In an isolated pod namespace, only `eth0`
+and `lo` are present — the host interfaces (`enp233s0`, etc.) are not.
+UCX fails to pair the mlx5 device with its netdev and falls back to TCP.
+
+**Fix:** Set `hostNetwork: true` in the pod spec, which places the pod in
+the host's network namespace. This requires the `hostnetwork` SCC:
+
+```bash
+oc adm policy add-scc-to-user hostnetwork -n <namespace> -z default
+```
+
+When using `hostNetwork: true`, the `rdma/rdma_shared_device_a` resource
+request is not needed — the pod already has direct access to all host
+interfaces and RDMA devices.
+
+### Summary
+
+| Framework | RDMA Transport | Needs hostNetwork | Needs rdma resource |
+|-----------|---------------|-------------------|---------------------|
+| NCCL      | IB verbs (GID table) | No | Yes |
+| UCX       | netdev lookup        | Yes | No |
+
+Ray itself uses gRPC for communication but PyTorch under Ray Train uses
+NCCL, so Ray-based training jobs do **not** need `hostNetwork`. Only if
+UCX transport is explicitly enabled in Ray would `hostNetwork` be required.
+
 ## Node Pinning
 
 The test deployments are pinned to specific nodes for cross-node testing via `nodeName`:
