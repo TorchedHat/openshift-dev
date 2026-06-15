@@ -61,6 +61,30 @@ oc create job --from=cronjob/nfs-backup-to-cos manual-backup -n nfs-server
 oc logs -f job/manual-backup -n nfs-server
 ```
 
+## Manual Backup (Per-User)
+
+Back up a single user's data to the same COS buckets used by the daily CronJobs.
+The Job runs in the user's namespace and mounts their PVC read-only — no admin
+keyring or privileged access needed.
+
+### NFS (H200 Toronto cluster)
+
+```bash
+./nfs-backup-user.sh
+```
+
+### CephFS (H100 RDMA cluster)
+
+```bash
+./cephfs-backup-user.sh
+```
+
+Both scripts:
+- Resolve the user's PVC to find the correct COS prefix
+- Copy `cos-backup-creds` to the user's namespace if not already present
+- Create a Job that syncs the PVC contents to the existing COS bucket
+- Do **not** use `--delete` — existing files in COS are preserved
+
 ## Restore a User's Data
 
 Both restore scripts prompt for the username, resolve the backup path from the user's PVC, and create a restore Job.
