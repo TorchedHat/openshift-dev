@@ -36,6 +36,9 @@ oc adm policy add-scc-to-user anyuid -z default -n $USERNAME
 # Allow hostNetwork for UCX-based RDMA workloads (vLLM/NIXL, OpenMPI).
 oc adm policy add-scc-to-user hostnetwork -z default -n $USERNAME
 
+# Grant cluster-reader for read access to non-namespaced resources (nodes, etc.).
+oc adm policy add-cluster-role-to-user cluster-reader "$IDENTITY"
+
 # Apply edit role to the user to allow them to create resources in their namespace.
 oc adm policy add-role-to-user edit "$IDENTITY" -n $USERNAME
 
