@@ -27,6 +27,41 @@ oc get clusterpolicy gpu-cluster-policy -o jsonpath='{.spec.cdi}'
 # Expected: {"default":true,"enabled":true,"nriPluginEnabled":false}
 ```
 
+## GPU Profiling for Non-Admin Users
+
+By default, NVIDIA restricts GPU profiling (Nsight Systems, Nsight Compute, nvprof) to
+admin users. To allow non-admin users to run profiling on MIG devices, set
+the `NVreg_RestrictProfilingToAdminUsers=0` kernel module parameter via a ConfigMap
+referenced by the ClusterPolicy's `kernelModuleConfig`.
+
+Create the ConfigMap in the `nvidia-gpu-operator` namespace:
+
+```bash
+oc create configmap nvidia-kernel-module-params -n nvidia-gpu-operator \
+  --from-literal=nvidia.conf="options nvidia NVreg_RestrictProfilingToAdminUsers=0"
+```
+
+Patch the ClusterPolicy to reference it:
+
+```bash
+oc patch clusterpolicy gpu-cluster-policy --type merge \
+  -p '{"spec":{"driver":{"kernelModuleConfig":{"name":"nvidia-kernel-module-params"}}}}'
+```
+
+Restart the driver pods to pick up the change:
+
+```bash
+oc delete pod -n nvidia-gpu-operator -l app=nvidia-driver-daemonset
+```
+
+Verify from the driver pod:
+
+```bash
+oc exec -n nvidia-gpu-operator <driver-pod> -c nvidia-driver-ctr \
+  -- cat /proc/driver/nvidia/params | grep RmProfilingAdminOnly
+# Expected: RmProfilingAdminOnly: 0
+```
+
 ## Deployment Changes
 
 All MIG deployment files must specify the `nvidia-cdi` RuntimeClass under `spec.template.spec`:
