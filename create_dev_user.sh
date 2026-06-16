@@ -25,7 +25,8 @@ oc create secret generic $USERNAME-gcloud-config \
   --from-file=$GCLOUD_CREDENTIALS
 
 # -- Track-specific resources --
-# Nix track: deployments are managed by the Helm chart (helm install).
+# Nix track: auto-detect storage class (same logic as create_dev_admin.sh)
+#            and deploy via Helm chart.
 # Standard track: apply the static deployment YAMLs.
 if [ "$TRACK" = "standard" ]; then
   oc apply -f <(sed "s/<username>/$USERNAME/g" deployment/deployment-mig-18g.yml)
@@ -33,8 +34,30 @@ if [ "$TRACK" = "standard" ]; then
   oc apply -f <(sed "s/<username>/$USERNAME/g" deployment/deployment-mig-10g-rdma.yml)
   oc apply -f <(sed "s/<username>/$USERNAME/g" deployment/deployment-mig-20g-rdma.yml)
 else
-  echo "Skipping static deployments (managed by Helm chart for track: $TRACK)"
-  echo "Next: helm install $USERNAME-dev devcontainers/nix/chart --set username=$USERNAME -n $USERNAME"
+  # Auto-detect storage class (mirrors create_dev_admin.sh detection order)
+  if oc get sc ocs-storagecluster-cephfs &>/dev/null; then
+    STORAGE_CLASS="ocs-storagecluster-cephfs"
+    ACCESS_MODE="ReadWriteMany"
+  elif oc get sc lvms-nvme-vg &>/dev/null; then
+    STORAGE_CLASS="lvms-nvme-vg"
+    ACCESS_MODE="ReadWriteOnce"
+  elif oc get sc nfs-rwx &>/dev/null; then
+    STORAGE_CLASS="nfs-rwx"
+    ACCESS_MODE="ReadWriteMany"
+  else
+    echo "ERROR: No supported storage class found (ocs-storagecluster-cephfs, lvms-nvme-vg, or nfs-rwx)"
+    exit 1
+  fi
+  echo "Detected storage class: $STORAGE_CLASS ($ACCESS_MODE)"
+
+  helm install $USERNAME-dev devcontainers/nix/chart \
+    --namespace $USERNAME \
+    --set username=$USERNAME \
+    --set storage.home.storageClass=$STORAGE_CLASS \
+    --set storage.home.accessMode=$ACCESS_MODE \
+    --set storage.nixCache.storageClass=$STORAGE_CLASS \
+    --set storage.nixCache.accessMode=$ACCESS_MODE \
+    --set imagePullSecret=rh-ee-sampark-dev-bot-pull-secret
 fi
 
 oc project $USERNAME

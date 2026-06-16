@@ -79,16 +79,16 @@ storage:
     create: true          # Set false to use an existing PVC
     existingClaim: ""     # If set, references this PVC instead of creating one
     size: 100Gi
-    storageClass: ocs-storagecluster-cephfs
-    accessMode: ReadWriteMany
+    storageClass: ""      # Auto-detected by create_dev_user.sh (CephFS > LVMS > NFS)
+    accessMode: ""        # Set by create_dev_user.sh based on detected storage class
 
   # -- Nix binary cache PVC (nix track only).
   nixCache:
     create: true
     existingClaim: ""
     size: 50Gi
-    storageClass: ocs-storagecluster-cephfs
-    accessMode: ReadWriteMany
+    storageClass: ""      # Auto-detected by create_dev_user.sh (CephFS > LVMS > NFS)
+    accessMode: ""        # Set by create_dev_user.sh based on detected storage class
 
   # -- Ephemeral local nix store (nix track only).
   nixLocal:

@@ -187,14 +187,14 @@
             "storageClass": {
               "type": "string",
               "title": "Storage Class",
-              "description": "Storage class for the home PVC. Use ocs-storagecluster-cephfs (CephFS) or nfs-rwx (NFS) for RWX, lvms-nvme-vg for RWO.",
-              "default": "ocs-storagecluster-cephfs"
+              "description": "Storage class for the home PVC. Auto-detected by create_dev_user.sh: ocs-storagecluster-cephfs (CephFS), lvms-nvme-vg (LVMS), or nfs-rwx (NFS).",
+              "default": ""
             },
             "accessMode": {
               "type": "string",
               "title": "Access Mode",
               "enum": ["ReadWriteMany", "ReadWriteOnce"],
-              "default": "ReadWriteMany"
+              "default": ""
             }
           }
         },
@@ -220,14 +220,14 @@
             "storageClass": {
               "type": "string",
               "title": "Storage Class",
-              "description": "Storage class for the nix cache PVC.",
-              "default": "ocs-storagecluster-cephfs"
+              "description": "Storage class for the nix cache PVC. Auto-detected by create_dev_user.sh.",
+              "default": ""
             },
             "accessMode": {
               "type": "string",
               "title": "Access Mode",
               "enum": ["ReadWriteMany", "ReadWriteOnce"],
-              "default": "ReadWriteMany"
+              "default": ""
             }
           }
         },
