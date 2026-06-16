@@ -13,7 +13,7 @@ metadata:
   labels:
     {{- include "devcontainers.labels" . | nindent 4 }}
 spec:
-  accessModes: [ReadWriteMany]
+  accessModes: [{{ .Values.storage.home.accessMode }}]
   storageClassName: {{ .Values.storage.home.storageClass }}
   resources:
     requests:
@@ -32,7 +32,7 @@ metadata:
   labels:
     {{- include "devcontainers.labels" . | nindent 4 }}
 spec:
-  accessModes: [ReadWriteMany]
+  accessModes: [{{ .Values.storage.nixCache.accessMode }}]
   storageClassName: {{ .Values.storage.nixCache.storageClass }}
   resources:
     requests:

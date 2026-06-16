@@ -1,5 +1,20 @@
 #!/bin/bash
 
+# Parse --track flag (default: standard)
+TRACK="standard"
+for arg in "$@"; do
+  case "$arg" in
+    --track=*) TRACK="${arg#*=}" ;;
+  esac
+done
+
+if [[ "$TRACK" != "standard" && "$TRACK" != "nix" ]]; then
+  echo "ERROR: unsupported track '$TRACK' -- must be 'standard' or 'nix'"
+  exit 1
+fi
+
+echo "Track: $TRACK"
+echo ""
 echo "Select auth type:"
 echo "  1) IBM Cloud IAM"
 echo "  2) GitHub"
@@ -45,25 +60,33 @@ oc adm policy add-role-to-user edit "$IDENTITY" -n $USERNAME
 # create RBAC for the user
 oc apply -f <(sed -e "s/<username>/$USERNAME/g" -e "s/<email>/$IDENTITY/g" rbac.yml)
 
-# create PVC for the user (auto-detect storage class)
-if oc get sc ocs-storagecluster-cephfs &>/dev/null; then
-  oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/persistent-workspace-pvc.yml)
-  CREDS_SOURCE_NS="openshift-storage"
-elif oc get sc lvms-nvme-vg &>/dev/null; then
-  oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/lvms-user-pvc.yml)
-  CREDS_SOURCE_NS="nfs-server"
-elif oc get sc nfs-rwx &>/dev/null; then
-  oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/pytorch-nfs-rwx-pvc.yml)
-  CREDS_SOURCE_NS="nfs-server"
-else
-  echo "ERROR: No supported storage class found (ocs-storagecluster-cephfs, lvms-nvme-vg, or nfs-rwx)"
-  exit 1
-fi
+# -- Track-specific resources --
+# Nix track: PVCs and deployments are managed by the Helm chart; skip them here.
+# Standard track: create workspace PVC and tooling ConfigMaps as before.
+if [ "$TRACK" = "standard" ]; then
+  # create PVC for the user (auto-detect storage class)
+  if oc get sc ocs-storagecluster-cephfs &>/dev/null; then
+    oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/persistent-workspace-pvc.yml)
+    CREDS_SOURCE_NS="openshift-storage"
+  elif oc get sc lvms-nvme-vg &>/dev/null; then
+    oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/lvms-user-pvc.yml)
+    CREDS_SOURCE_NS="nfs-server"
+  elif oc get sc nfs-rwx &>/dev/null; then
+    oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/pytorch-nfs-rwx-pvc.yml)
+    CREDS_SOURCE_NS="nfs-server"
+  else
+    echo "ERROR: No supported storage class found (ocs-storagecluster-cephfs, lvms-nvme-vg, or nfs-rwx)"
+    exit 1
+  fi
 
-# copy COS backup credentials to user namespace
-if oc get secret cos-backup-creds -n "$CREDS_SOURCE_NS" &>/dev/null; then
-  oc get secret cos-backup-creds -n "$CREDS_SOURCE_NS" -o json | \
-    python3 -c "
+  # create configmaps for bazel and gdbinit
+  oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/bazel-configmap.yml)
+  oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/gdbinit-configmap.yml)
+
+  # copy COS backup credentials to user namespace
+  if [ -n "$CREDS_SOURCE_NS" ] && oc get secret cos-backup-creds -n "$CREDS_SOURCE_NS" &>/dev/null; then
+    oc get secret cos-backup-creds -n "$CREDS_SOURCE_NS" -o json | \
+      python3 -c "
 import sys, json
 s = json.load(sys.stdin)
 s['metadata']['namespace'] = '$USERNAME'
@@ -71,14 +94,13 @@ for k in ['uid', 'resourceVersion', 'creationTimestamp', 'managedFields']:
     s['metadata'].pop(k, None)
 json.dump(s, sys.stdout)
 " | oc apply -f -
+  fi
+else
+  echo "Skipping workspace PVC and ConfigMaps (managed by Helm chart for track: $TRACK)"
 fi
 
 # push quay image secret to pull image from quay
 oc apply -f <(sed "s/<username>/$USERNAME/g" rh-ee-sampark-dev-bot-secret.yml)
-
-# create configmaps for bazel and gdbinit
-oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/bazel-configmap.yml)
-oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/gdbinit-configmap.yml)
 
 # create resourcequotas
 oc apply -f <(sed "s/<username>/$USERNAME/g" resourcequotas.yml)

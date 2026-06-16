@@ -6,6 +6,17 @@
 {{- if eq .Values.track "nix" }}
   Settings: {{ if .Values.nix.settings.repo }}{{ .Values.nix.settings.repo }}{{ else }}template (default){{ end }}
 {{- end }}
+{{- if .Values.hostNetwork }}
+  Network:  hostNetwork (requires hostnetwork SCC)
+{{- end }}
+{{- if .Values.rdma.enabled }}
+  RDMA:     {{ .Values.rdma.resource }} x{{ .Values.rdma.count }}
+{{- end }}
+
+Prerequisites (via create_dev_admin.sh --track={{ .Values.track }}):
+  - Namespace, RBAC, anyuid SCC, resource quota
+  - cluster-reader role (for node access)
+  - hostnetwork SCC (provisioned for all users; required if hostNetwork=true)
 
 Scale up:
   oc scale deployment {{ include "devcontainers.name" . }} -n {{ .Values.username }} --replicas=1

@@ -52,9 +52,9 @@ nix:
 
 gpu:
   enabled: true
-  type: nvidia.com/mig-2g.35gb
+  type: nvidia.com/gpu
   count: 1
-  # -- Runtime class. Set to nvidia-cdi for MIG slices, leave empty otherwise.
+  # -- Runtime class. Set to nvidia-cdi for MIG slices, leave empty for full GPUs.
   runtimeClassName: ""
 
 # =============================================================================
@@ -64,10 +64,10 @@ gpu:
 resources:
   requests:
     cpu: "4"
-    memory: 64Gi
+    memory: 32Gi
   limits:
     cpu: "16"
-    memory: 64Gi
+    memory: 32Gi
 
 # =============================================================================
 # Storage
@@ -79,14 +79,16 @@ storage:
     create: true          # Set false to use an existing PVC
     existingClaim: ""     # If set, references this PVC instead of creating one
     size: 100Gi
-    storageClass: nfs-rwx
+    storageClass: ocs-storagecluster-cephfs
+    accessMode: ReadWriteMany
 
   # -- Nix binary cache PVC (nix track only).
   nixCache:
     create: true
     existingClaim: ""
     size: 50Gi
-    storageClass: nfs-rwx
+    storageClass: ocs-storagecluster-cephfs
+    accessMode: ReadWriteMany
 
   # -- Ephemeral local nix store (nix track only).
   nixLocal:
@@ -99,6 +101,16 @@ storage:
 # =============================================================================
 # Networking
 # =============================================================================
+
+# -- Enable host networking (required for UCX-based RDMA workloads).
+# -- Requires hostnetwork SCC granted by create_dev_admin.sh.
+hostNetwork: false
+
+# -- RDMA device passthrough for multi-node training.
+rdma:
+  enabled: false
+  resource: rdma/rdma_shared_device_a
+  count: 1
 
 ssh:
   enabled: true

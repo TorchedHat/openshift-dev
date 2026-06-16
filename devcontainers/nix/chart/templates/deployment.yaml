@@ -20,6 +20,10 @@ spec:
       {{- if .Values.gpu.runtimeClassName }}
       runtimeClassName: {{ .Values.gpu.runtimeClassName }}
       {{- end }}
+      {{- if .Values.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
       {{- if .Values.imagePullSecret }}
       imagePullSecrets:
         - name: {{ .Values.imagePullSecret }}
@@ -213,11 +217,17 @@ spec:
               {{- if .Values.gpu.enabled }}
               {{ .Values.gpu.type }}: {{ .Values.gpu.count | quote }}
               {{- end }}
+              {{- if .Values.rdma.enabled }}
+              {{ .Values.rdma.resource }}: {{ .Values.rdma.count | quote }}
+              {{- end }}
             limits:
               cpu: {{ .Values.resources.limits.cpu | quote }}
               memory: {{ .Values.resources.limits.memory }}
               {{- if .Values.gpu.enabled }}
               {{ .Values.gpu.type }}: {{ .Values.gpu.count | quote }}
+              {{- end }}
+              {{- if .Values.rdma.enabled }}
+              {{ .Values.rdma.resource }}: {{ .Values.rdma.count | quote }}
               {{- end }}
           volumeMounts:
             {{- if eq .Values.track "nix" }}
