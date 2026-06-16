@@ -49,6 +49,25 @@ spec:
             - -c
             - |
               cp -rn --no-preserve=ownership /home/devuser/. /mnt/data/
+              find /home/devuser -type l 2>/dev/null | while read link; do
+                dest="/mnt/data${link#/home/devuser}"
+                mkdir -p "$(dirname "$dest")"
+                rm -f "$dest" 2>/dev/null
+                cp -a "$link" "$dest" 2>/dev/null
+              done
+              if [ -d /mnt/data/miniconda/lib ]; then
+                for f in /mnt/data/miniconda/lib/*.so*; do
+                  [ -f "$f" ] || continue
+                  [ -L "$f" ] && continue
+                  base="$(basename "$f")"
+                  [ -e "/home/devuser/miniconda/lib/$base" ] && continue
+                  rm -f "$f"
+                done
+              fi
+              find /home/devuser/miniconda/bin -type f -executable 2>/dev/null | while read f; do
+                dest="/mnt/data${f#/home/devuser}"
+                [ -f "$dest" ] && chmod +x "$dest"
+              done
               chmod +x /mnt/data/.local/share/claude/versions/*/claude-code /mnt/data/.local/bin/claude 2>/dev/null || true
           resources:
             limits:
