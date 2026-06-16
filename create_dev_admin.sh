@@ -48,11 +48,29 @@ oc apply -f <(sed -e "s/<username>/$USERNAME/g" -e "s/<email>/$IDENTITY/g" rbac.
 # create PVC for the user (auto-detect storage class)
 if oc get sc ocs-storagecluster-cephfs &>/dev/null; then
   oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/persistent-workspace-pvc.yml)
+  CREDS_SOURCE_NS="openshift-storage"
+elif oc get sc lvms-nvme-vg &>/dev/null; then
+  oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/lvms-user-pvc.yml)
+  CREDS_SOURCE_NS="nfs-server"
 elif oc get sc nfs-rwx &>/dev/null; then
   oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/pytorch-nfs-rwx-pvc.yml)
+  CREDS_SOURCE_NS="nfs-server"
 else
-  echo "ERROR: No supported RWX storage class found (nfs-rwx or ocs-storagecluster-cephfs)"
+  echo "ERROR: No supported storage class found (ocs-storagecluster-cephfs, lvms-nvme-vg, or nfs-rwx)"
   exit 1
+fi
+
+# copy COS backup credentials to user namespace
+if oc get secret cos-backup-creds -n "$CREDS_SOURCE_NS" &>/dev/null; then
+  oc get secret cos-backup-creds -n "$CREDS_SOURCE_NS" -o json | \
+    python3 -c "
+import sys, json
+s = json.load(sys.stdin)
+s['metadata']['namespace'] = '$USERNAME'
+for k in ['uid', 'resourceVersion', 'creationTimestamp', 'managedFields']:
+    s['metadata'].pop(k, None)
+json.dump(s, sys.stdout)
+" | oc apply -f -
 fi
 
 # push quay image secret to pull image from quay

@@ -7,7 +7,8 @@ Daily backups of user workspace data to IBM Cloud Object Storage (COS).
 | Backend | Backup CronJob | Restore Job | Bucket | Region |
 |---|---|---|---|---|
 | CephFS (ODF) | `cephfs-backup-to-cos.yml` | `cephfs-restore-from-cos.yml` | `pytorch-cephfs-backup` | us-east |
-| NFS | `nfs-backup-to-cos.yml` | `restore-from-cos.yml` | `pytorch-nfs-backup` | ca-tor |
+| LVMS (NVMe RWO) | `lvms-backup-to-cos.yml` | `lvms-restore-from-cos.yml` | `pytorch-nfs-backup` | ca-tor |
+| NFS (retired) | `nfs-backup-to-cos.yml` | `restore-from-cos.yml` | `pytorch-nfs-backup` | ca-tor |
 
 ## Requirements
 
@@ -37,13 +38,22 @@ Daily backups of user workspace data to IBM Cloud Object Storage (COS).
 oc apply -f cephfs-backup-to-cos.yml
 ```
 
-### NFS
+### LVMS (CA-TOR H200 cluster)
+
+```bash
+oc apply -f lvms-backup-to-cos.yml
+```
+
+This deploys a coordinator CronJob with a ServiceAccount and RBAC. The coordinator
+discovers all `lvms-nvme-vg` PVCs across namespaces and creates per-user backup Jobs.
+
+### NFS (retired — kept for reference)
 
 ```bash
 oc apply -f nfs-backup-to-cos.yml
 ```
 
-Both run daily at 2:00 AM UTC.
+All run daily at 2:00 AM UTC.
 
 ## Trigger Manual Backup
 
@@ -54,7 +64,14 @@ oc create job --from=cronjob/cephfs-backup-to-cos manual-backup -n openshift-sto
 oc logs -f job/manual-backup -n openshift-storage
 ```
 
-### NFS
+### LVMS
+
+```bash
+oc create job --from=cronjob/lvms-backup-to-cos manual-backup -n nfs-server
+oc logs -f job/manual-backup -n nfs-server
+```
+
+### NFS (retired)
 
 ```bash
 oc create job --from=cronjob/nfs-backup-to-cos manual-backup -n nfs-server
@@ -67,7 +84,13 @@ Back up a single user's data to the same COS buckets used by the daily CronJobs.
 The Job runs in the user's namespace and mounts their PVC read-only — no admin
 keyring or privileged access needed.
 
-### NFS (H200 Toronto cluster)
+### LVMS (H200 Toronto cluster)
+
+```bash
+./lvms-backup-user.sh
+```
+
+### NFS (retired)
 
 ```bash
 ./nfs-backup-user.sh
@@ -87,7 +110,7 @@ Both scripts:
 
 ## Restore a User's Data
 
-Both restore scripts prompt for the username, resolve the backup path from the user's PVC, and create a restore Job.
+All restore scripts prompt for the username, resolve the backup path from the user's PVC, and create a restore Job.
 
 ### CephFS
 
@@ -104,7 +127,22 @@ oc logs -f job/cephfs-restore-<username> -n <username>
 oc delete job cephfs-restore-<username> -n <username>
 ```
 
-### NFS
+### LVMS
+
+```bash
+./lvms-restore-user.sh
+```
+
+Uses the username as the COS prefix. Copies `cos-backup-creds` to the user's namespace if needed.
+
+Monitor and clean up:
+
+```bash
+oc logs -f job/lvms-restore-<username> -n <username>
+oc delete job lvms-restore-<username> -n <username>
+```
+
+### NFS (retired)
 
 ```bash
 ./restore-from-cos.sh
