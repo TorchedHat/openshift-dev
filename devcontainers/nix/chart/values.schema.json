@@ -1,0 +1,347 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["username"],
+  "properties": {
+    "username": {
+      "type": "string",
+      "title": "Username",
+      "description": "OpenShift username. Used as the namespace and resource name prefix.",
+      "minLength": 1
+    },
+    "track": {
+      "type": "string",
+      "title": "Track",
+      "description": "Deployment track. Determines how the dev environment is configured.",
+      "enum": ["nix"],
+      "default": "nix"
+    },
+    "gpu": {
+      "type": "object",
+      "title": "GPU",
+      "required": ["enabled", "type"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable GPU",
+          "description": "Attach a GPU resource to the pod.",
+          "default": true
+        },
+        "type": {
+          "type": "string",
+          "title": "GPU Type",
+          "description": "Kubernetes device resource name.",
+          "enum": [
+            "nvidia.com/gpu",
+            "nvidia.com/mig-1g.18gb",
+            "nvidia.com/mig-2g.35gb"
+          ],
+          "default": "nvidia.com/gpu"
+        },
+        "count": {
+          "type": "integer",
+          "title": "GPU Count",
+          "description": "Number of GPU slices to request.",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 8
+        },
+        "runtimeClassName": {
+          "type": "string",
+          "title": "Runtime Class",
+          "description": "Set to nvidia-cdi for MIG slices. Leave empty for full GPUs or CPU-only.",
+          "enum": ["", "nvidia-cdi"],
+          "default": ""
+        }
+      }
+    },
+    "nix": {
+      "type": "object",
+      "title": "Nix Settings",
+      "description": "Configuration for the nix-managed dev environment. Only used when track is nix.",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "title": "User Settings",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "title": "Settings Repo",
+              "description": "Git SSH URL for your personal settings repo. Leave empty to use the default template.",
+              "default": ""
+            },
+            "profile": {
+              "type": "string",
+              "title": "Home-Manager Profile",
+              "description": "The flake output profile name for home-manager.",
+              "default": "default"
+            }
+          }
+        },
+        "initConfig": {
+          "type": "object",
+          "title": "Init Config Resources",
+          "description": "Resource limits for the init container that runs home-manager switch.",
+          "properties": {
+            "resources": {
+              "type": "object",
+              "properties": {
+                "requests": {
+                  "type": "object",
+                  "properties": {
+                    "cpu": { "type": "string", "title": "CPU Request", "default": "1" },
+                    "memory": { "type": "string", "title": "Memory Request", "default": "4Gi" }
+                  }
+                },
+                "limits": {
+                  "type": "object",
+                  "properties": {
+                    "cpu": { "type": "string", "title": "CPU Limit", "default": "4" },
+                    "memory": { "type": "string", "title": "Memory Limit", "default": "8Gi" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "title": "Image",
+      "description": "Container image used for all containers (init + main).",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "title": "Repository",
+          "default": "quay.io/rh-ee-hgudmund/torched-devcontainer"
+        },
+        "tag": {
+          "type": "string",
+          "title": "Tag",
+          "default": "latest"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "title": "Pull Policy",
+          "enum": ["Always", "IfNotPresent", "Never"],
+          "default": "Always"
+        }
+      }
+    },
+    "imagePullSecret": {
+      "type": "string",
+      "title": "Image Pull Secret",
+      "description": "Name of an existing image pull secret. Leave empty if the image is public.",
+      "default": ""
+    },
+    "resources": {
+      "type": "object",
+      "title": "Resources",
+      "description": "CPU and memory for the main dev container.",
+      "properties": {
+        "requests": {
+          "type": "object",
+          "title": "Requests",
+          "properties": {
+            "cpu": { "type": "string", "title": "CPU Request", "default": "4" },
+            "memory": { "type": "string", "title": "Memory Request", "default": "32Gi" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "title": "Limits",
+          "properties": {
+            "cpu": { "type": "string", "title": "CPU Limit", "default": "16" },
+            "memory": { "type": "string", "title": "Memory Limit", "default": "32Gi" }
+          }
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "title": "Storage",
+      "description": "Persistent volume configuration.",
+      "properties": {
+        "home": {
+          "type": "object",
+          "title": "Home Directory",
+          "properties": {
+            "create": {
+              "type": "boolean",
+              "title": "Create PVC",
+              "description": "Set to false to use an existing PVC.",
+              "default": true
+            },
+            "existingClaim": {
+              "type": "string",
+              "title": "Existing Claim",
+              "description": "Name of an existing PVC to use instead of creating one.",
+              "default": ""
+            },
+            "size": {
+              "type": "string",
+              "title": "Size",
+              "default": "100Gi"
+            },
+            "storageClass": {
+              "type": "string",
+              "title": "Storage Class",
+              "description": "Storage class for the home PVC. Auto-detected by create_dev_user.sh: ocs-storagecluster-cephfs (CephFS), lvms-nvme-vg (LVMS), or nfs-rwx (NFS).",
+              "default": ""
+            },
+            "accessMode": {
+              "type": "string",
+              "title": "Access Mode",
+              "enum": ["ReadWriteMany", "ReadWriteOnce"],
+              "default": ""
+            }
+          }
+        },
+        "nixCache": {
+          "type": "object",
+          "title": "Nix Binary Cache",
+          "properties": {
+            "create": {
+              "type": "boolean",
+              "title": "Create PVC",
+              "default": true
+            },
+            "existingClaim": {
+              "type": "string",
+              "title": "Existing Claim",
+              "default": ""
+            },
+            "size": {
+              "type": "string",
+              "title": "Size",
+              "default": "50Gi"
+            },
+            "storageClass": {
+              "type": "string",
+              "title": "Storage Class",
+              "description": "Storage class for the nix cache PVC. Auto-detected by create_dev_user.sh.",
+              "default": ""
+            },
+            "accessMode": {
+              "type": "string",
+              "title": "Access Mode",
+              "enum": ["ReadWriteMany", "ReadWriteOnce"],
+              "default": ""
+            }
+          }
+        },
+        "nixLocal": {
+          "type": "object",
+          "title": "Local Nix Store",
+          "description": "Ephemeral emptyDir for the nix store. Rebuilt on each pod restart.",
+          "properties": {
+            "sizeLimit": {
+              "type": "string",
+              "title": "Size Limit",
+              "default": "50Gi"
+            }
+          }
+        },
+        "shm": {
+          "type": "object",
+          "title": "Shared Memory",
+          "properties": {
+            "sizeLimit": {
+              "type": "string",
+              "title": "Size Limit",
+              "default": "16Gi"
+            }
+          }
+        }
+      }
+    },
+    "hostNetwork": {
+      "type": "boolean",
+      "title": "Host Network",
+      "description": "Enable host networking for UCX-based RDMA workloads. Requires hostnetwork SCC.",
+      "default": false
+    },
+    "rdma": {
+      "type": "object",
+      "title": "RDMA",
+      "description": "RDMA device passthrough for multi-node training.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable RDMA",
+          "default": false
+        },
+        "resource": {
+          "type": "string",
+          "title": "RDMA Resource",
+          "description": "Kubernetes device resource name for RDMA.",
+          "default": "rdma/rdma_shared_device_a"
+        },
+        "count": {
+          "type": "integer",
+          "title": "RDMA Device Count",
+          "default": 1,
+          "minimum": 1
+        }
+      }
+    },
+    "ssh": {
+      "type": "object",
+      "title": "SSH",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable SSH Server",
+          "description": "Run a dropbear SSH server in the container.",
+          "default": true
+        },
+        "port": {
+          "type": "integer",
+          "title": "SSH Port",
+          "default": 22
+        }
+      }
+    },
+    "env": {
+      "type": "object",
+      "title": "Environment",
+      "properties": {
+        "MAX_JOBS": {
+          "type": "string",
+          "title": "MAX_JOBS",
+          "description": "Maximum parallel build jobs.",
+          "default": "8"
+        }
+      }
+    },
+    "extraEnv": {
+      "type": "object",
+      "title": "Extra Environment Variables",
+      "description": "Additional environment variables as key-value pairs.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "replicas": {
+      "type": "integer",
+      "title": "Replicas",
+      "description": "Set to 0 to create the deployment without starting a pod. Scale up to 1 when ready.",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 1
+    },
+    "strategy": {
+      "type": "string",
+      "title": "Update Strategy",
+      "enum": ["Recreate", "RollingUpdate"],
+      "default": "Recreate"
+    },
+    "progressDeadlineSeconds": {
+      "type": "integer",
+      "title": "Progress Deadline",
+      "description": "Seconds before a deployment is considered failed.",
+      "default": 900
+    }
+  }
+}

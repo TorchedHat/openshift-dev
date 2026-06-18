@@ -1,0 +1,132 @@
+# =============================================================================
+# Core identity
+# =============================================================================
+
+# -- Required. OpenShift username and namespace.
+username: ""
+
+# -- Deployment track. Determines volumes, init containers, security context,
+# -- and container startup behavior.
+# -- Supported: "nix"
+# -- Future: "fat-image", "torch-dev-containers"
+track: nix
+
+# =============================================================================
+# Container image
+# =============================================================================
+
+image:
+  repository: quay.io/rh-ee-hgudmund/torched-devcontainer
+  tag: latest
+  pullPolicy: Always
+
+# -- Optional image pull secret name. Leave empty if image is public.
+imagePullSecret: ""
+
+# =============================================================================
+# Track-specific: nix
+# -- Configuration for the nix-managed dev environment track.
+# -- These values are only used when track == "nix".
+# =============================================================================
+
+nix:
+  # -- Git SSH URL for user settings repo (optional).
+  # -- Falls back to nix flake init template if empty.
+  settings:
+    repo: ""
+    profile: default    # Home-manager profile name
+
+  # -- Resources for the init-config container (runs home-manager switch).
+  initConfig:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 4Gi
+      limits:
+        cpu: "4"
+        memory: 8Gi
+
+# =============================================================================
+# GPU
+# =============================================================================
+
+gpu:
+  enabled: true
+  type: nvidia.com/gpu
+  count: 1
+  # -- Runtime class. Set to nvidia-cdi for MIG slices, leave empty for full GPUs.
+  runtimeClassName: ""
+
+# =============================================================================
+# Resources (main container)
+# =============================================================================
+
+resources:
+  requests:
+    cpu: "4"
+    memory: 32Gi
+  limits:
+    cpu: "16"
+    memory: 32Gi
+
+# =============================================================================
+# Storage
+# =============================================================================
+
+storage:
+  # -- Home directory PVC.
+  home:
+    create: true          # Set false to use an existing PVC
+    existingClaim: ""     # If set, references this PVC instead of creating one
+    size: 100Gi
+    storageClass: ""      # Auto-detected by create_dev_user.sh (CephFS > LVMS > NFS)
+    accessMode: ""        # Set by create_dev_user.sh based on detected storage class
+
+  # -- Nix binary cache PVC (nix track only).
+  nixCache:
+    create: true
+    existingClaim: ""
+    size: 50Gi
+    storageClass: ""      # Auto-detected by create_dev_user.sh (CephFS > LVMS > NFS)
+    accessMode: ""        # Set by create_dev_user.sh based on detected storage class
+
+  # -- Ephemeral local nix store (nix track only).
+  nixLocal:
+    sizeLimit: 50Gi
+
+  # -- Shared memory (/dev/shm).
+  shm:
+    sizeLimit: 16Gi
+
+# =============================================================================
+# Networking
+# =============================================================================
+
+# -- Enable host networking (required for UCX-based RDMA workloads).
+# -- Requires hostnetwork SCC granted by create_dev_admin.sh.
+hostNetwork: false
+
+# -- RDMA device passthrough for multi-node training.
+rdma:
+  enabled: false
+  resource: rdma/rdma_shared_device_a
+  count: 1
+
+ssh:
+  enabled: true
+  port: 22
+
+# =============================================================================
+# Misc
+# =============================================================================
+
+env:
+  MAX_JOBS: "8"
+
+# -- Additional environment variables injected into the main container.
+# -- Example: { CUDA_VISIBLE_DEVICES: "0", DEBUG: "1" }
+extraEnv: {}
+
+replicas: 0
+strategy: Recreate
+progressDeadlineSeconds: 900

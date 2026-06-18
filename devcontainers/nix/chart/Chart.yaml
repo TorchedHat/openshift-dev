@@ -1,0 +1,9 @@
+apiVersion: v2
+name: devcontainers
+description: GPU development environments for OpenShift
+version: 0.1.0
+type: application
+appVersion: "1.0.0"
+annotations:
+  charts.openshift.io/name: Dev Containers
+  charts.openshift.io/provider: TorchedHat

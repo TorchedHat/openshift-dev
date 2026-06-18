@@ -1,0 +1,259 @@
+{{- include "devcontainers.validate" . -}}
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: {{ include "devcontainers.name" . }}
+  namespace: {{ include "devcontainers.namespace" . }}
+  labels:
+    {{- include "devcontainers.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "devcontainers.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "devcontainers.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- if .Values.gpu.runtimeClassName }}
+      runtimeClassName: {{ .Values.gpu.runtimeClassName }}
+      {{- end }}
+      {{- if .Values.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      {{- if .Values.imagePullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      {{- end }}
+
+      {{/* ---- Volumes ---- */}}
+      volumes:
+        - name: ssh-key
+          secret:
+            secretName: {{ .Values.username }}-git-ssh-key
+            items:
+              - key: ssh-privatekey
+                path: id_ed25519
+              - key: ssh-publickey
+                path: id_ed25519.pub
+              - key: known_hosts
+                path: known_hosts
+            defaultMode: 0600
+        - name: gcloud-config
+          secret:
+            secretName: {{ .Values.username }}-gcloud-config
+            defaultMode: 0600
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.storage.shm.sizeLimit }}
+        {{- if eq .Values.track "nix" }}
+        - name: nix-local
+          emptyDir:
+            sizeLimit: {{ .Values.storage.nixLocal.sizeLimit }}
+        - name: nix-cache
+          persistentVolumeClaim:
+            claimName: {{ include "devcontainers.nixCacheClaim" . }}
+        - name: home
+          persistentVolumeClaim:
+            claimName: {{ include "devcontainers.homeClaim" . }}
+        {{- end }}
+
+      {{/* ---- Init containers ---- */}}
+      initContainers:
+        {{- if eq .Values.track "nix" }}
+        - name: init-nix
+          image: {{ include "devcontainers.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              echo ":: seeding local nix store..."
+              cp -a /nix/. /mnt/nix/
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - name: nix-local
+              mountPath: /mnt/nix
+        - name: init-config
+          image: {{ include "devcontainers.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: HM_PROFILE
+              value: {{ .Values.nix.settings.profile | quote }}
+            - name: SETTINGS_REPO
+              value: {{ .Values.nix.settings.repo | quote }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              # Configure nix for local store + NFS binary cache
+              mkdir -p /root/.config/nix
+              cat > /root/.config/nix/nix.conf <<'NIXCONF'
+              experimental-features = nix-command flakes
+              build-users-group =
+              build-dir = /tmp/nix-builds
+              substituters = file:///nix-cache https://cache.nixos.org
+              trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+              require-sigs = false
+              NIXCONF
+
+              . /root/.nix-profile/etc/profile.d/nix.sh 2>/dev/null || true
+
+              # SSH keys for git clone
+              mkdir -p /root/.ssh
+              cp /root/.ssh-keys/id_ed25519 /root/.ssh/id_ed25519 2>/dev/null
+              cp /root/.ssh-keys/known_hosts /root/.ssh/known_hosts 2>/dev/null
+              chmod 700 /root/.ssh 2>/dev/null; chmod 600 /root/.ssh/* 2>/dev/null
+
+              # Clone/pull settings
+              if [ -n "$SETTINGS_REPO" ]; then
+                if [ ! -d ~/workspace/settings ]; then
+                  echo ":: cloning settings repo..."
+                  /usr/bin/git clone "$SETTINGS_REPO" ~/workspace/settings
+                elif [ ! -d ~/workspace/settings/.git ]; then
+                  echo ":: backing up template, cloning settings repo..."
+                  mv ~/workspace/settings ~/workspace/settings.bak
+                  /usr/bin/git clone "$SETTINGS_REPO" ~/workspace/settings
+                else
+                  echo ":: updating settings repo..."
+                  /usr/bin/git -C ~/workspace/settings pull --ff-only 2>/dev/null || true
+                fi
+              else
+                if [ ! -f ~/workspace/settings/flake.nix ]; then
+                  echo ":: initializing settings from template..."
+                  mkdir -p ~/workspace/settings
+                  cd ~/workspace/settings
+                  nix flake init -t github:hinriksnaer/torched-devcontainer --refresh
+                fi
+              fi
+
+              # Home-manager switch
+              echo ":: applying home-manager config (profile: ${HM_PROFILE:-default})..."
+              if timeout 600 nix run --print-build-logs home-manager/master -- switch -b backup \
+                --flake "/root/workspace/settings#${HM_PROFILE:-default}" --print-build-logs; then
+                echo ":: pushing closures to nix cache..."
+                hm_path=$(readlink -f /root/.local/state/home-manager/gcroots/current-home 2>/dev/null)
+                [ -n "$hm_path" ] && nix copy --to file:///nix-cache "$hm_path" --no-check-sigs 2>/dev/null || true
+                devshell_path=$(nix path-info --flake "/root/workspace/settings#devShells.x86_64-linux.default" 2>/dev/null)
+                [ -n "$devshell_path" ] && nix copy --to file:///nix-cache "$devshell_path" --no-check-sigs 2>/dev/null || true
+              else
+                echo ":: WARNING: home-manager switch failed or timed out."
+                echo ":: Run 'torched apply' manually after the pod starts."
+              fi
+          resources:
+            requests:
+              cpu: {{ .Values.nix.initConfig.resources.requests.cpu | quote }}
+              memory: {{ .Values.nix.initConfig.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.nix.initConfig.resources.limits.cpu | quote }}
+              memory: {{ .Values.nix.initConfig.resources.limits.memory }}
+          volumeMounts:
+            - name: nix-local
+              mountPath: /nix
+            - name: nix-cache
+              mountPath: /nix-cache
+            - name: home
+              mountPath: /root
+            - name: ssh-key
+              mountPath: /root/.ssh-keys
+              readOnly: true
+            - name: gcloud-config
+              mountPath: /root/.config/gcloud
+              readOnly: true
+        {{- end }}
+
+      {{/* ---- Main container ---- */}}
+      containers:
+        - name: dev
+          image: {{ include "devcontainers.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          stdin: true
+          tty: true
+          {{- if eq .Values.track "nix" }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              chmod 755 /root
+              cp /root/.ssh-keys/id_ed25519.pub /root/.ssh/authorized_keys 2>/dev/null
+              chmod 600 /root/.ssh/authorized_keys 2>/dev/null
+              /usr/sbin/dropbear -R -E -p {{ .Values.ssh.port }}
+              exec sleep infinity
+          {{- end }}
+          ports:
+            {{- if and (eq .Values.track "nix") .Values.ssh.enabled }}
+            - containerPort: {{ .Values.ssh.port }}
+              protocol: TCP
+            {{- end }}
+            - containerPort: 8080
+              protocol: TCP
+          {{- if and (eq .Values.track "nix") .Values.ssh.enabled }}
+          startupProbe:
+            tcpSocket:
+              port: {{ .Values.ssh.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.ssh.port }}
+            periodSeconds: 30
+            failureThreshold: 3
+          {{- end }}
+          env:
+            - name: MAX_JOBS
+              value: {{ .Values.env.MAX_JOBS | quote }}
+            {{- range $k, $v := .Values.extraEnv }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+              memory: {{ .Values.resources.requests.memory }}
+              {{- if .Values.gpu.enabled }}
+              {{ .Values.gpu.type }}: {{ .Values.gpu.count | quote }}
+              {{- end }}
+              {{- if .Values.rdma.enabled }}
+              {{ .Values.rdma.resource }}: {{ .Values.rdma.count | quote }}
+              {{- end }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | quote }}
+              memory: {{ .Values.resources.limits.memory }}
+              {{- if .Values.gpu.enabled }}
+              {{ .Values.gpu.type }}: {{ .Values.gpu.count | quote }}
+              {{- end }}
+              {{- if .Values.rdma.enabled }}
+              {{ .Values.rdma.resource }}: {{ .Values.rdma.count | quote }}
+              {{- end }}
+          volumeMounts:
+            {{- if eq .Values.track "nix" }}
+            - name: home
+              mountPath: /root
+            - name: nix-local
+              mountPath: /nix
+            - name: nix-cache
+              mountPath: /nix-cache
+            - name: ssh-key
+              mountPath: /root/.ssh-keys
+              readOnly: true
+            - name: gcloud-config
+              mountPath: /root/.config/gcloud
+              readOnly: true
+            {{- end }}
+            - name: dshm
+              mountPath: /dev/shm
+
+      terminationGracePeriodSeconds: 30
+      {{- if eq .Values.track "nix" }}
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      {{- end }}
+  strategy:
+    type: {{ .Values.strategy }}
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: {{ .Values.progressDeadlineSeconds }}
