@@ -65,11 +65,10 @@ spec:
                   rm -f "$f"
                 done
               fi
-              find /home/devuser/miniconda/bin -type f -executable 2>/dev/null | while read f; do
+              find /home/devuser -type f -executable 2>/dev/null | while read f; do
                 dest="/mnt/data${f#/home/devuser}"
                 [ -f "$dest" ] && chmod +x "$dest"
               done
-              chmod +x /mnt/data/.local/share/claude/versions/*/claude-code /mnt/data/.local/bin/claude 2>/dev/null || true
           resources:
             limits:
               cpu: 500m
