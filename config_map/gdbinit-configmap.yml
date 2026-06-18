@@ -5,4 +5,4 @@ metadata:
   namespace: <username>
 data:
   .gdbinit: |
-    source /root/devcontainers/pytorch/tools/gdb/pytorch-gdb.py
+    source /home/devuser/devcontainers/pytorch/tools/gdb/pytorch-gdb.py

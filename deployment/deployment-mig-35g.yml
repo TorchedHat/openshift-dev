@@ -69,6 +69,7 @@ spec:
                 dest="/mnt/data${f#/home/devuser}"
                 [ -f "$dest" ] && chmod +x "$dest"
               done
+              find /mnt/data -path '*/bin/*' -type f ! -executable -print0 2>/dev/null | xargs -0 -r chmod +x 2>/dev/null || true
           resources:
             limits:
               cpu: 500m
