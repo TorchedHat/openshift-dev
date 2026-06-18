@@ -66,9 +66,15 @@ spec:
           aws configure set aws_secret_access_key "\$AWS_SECRET_ACCESS_KEY"
           aws configure set default.region us-east-3
           echo "Starting CephFS backup for $USERNAME at \$(date)"
+          find /source -type f -executable -printf '%P\n' > /tmp/.executable-manifest
+          echo "Executable manifest: \$(wc -l < /tmp/.executable-manifest) entries"
           aws --endpoint-url https://s3.us-east.cloud-object-storage.appdomain.cloud \
             s3 sync /source/ s3://pytorch-cephfs-backup/$COS_PREFIX/ \
+            --exclude '.executable-manifest' \
             --no-follow-symlinks \
+            --only-show-errors
+          aws --endpoint-url https://s3.us-east.cloud-object-storage.appdomain.cloud \
+            s3 cp /tmp/.executable-manifest s3://pytorch-cephfs-backup/$COS_PREFIX/.executable-manifest \
             --only-show-errors
           echo "Backup completed at \$(date)"
         env:

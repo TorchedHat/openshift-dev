@@ -51,9 +51,27 @@ spec:
               aws configure set default.region us-east-3
 
               echo "Starting CephFS backup at $(date)"
-              aws --endpoint-url https://s3.us-east.cloud-object-storage.appdomain.cloud \
-                s3 sync /mnt/cephfs/volumes/csi/ s3://pytorch-cephfs-backup/ \
+              ENDPOINT="https://s3.us-east.cloud-object-storage.appdomain.cloud"
+              BUCKET="pytorch-cephfs-backup"
+
+              # generate per-subvolume executable manifests
+              for subvol in /mnt/cephfs/volumes/csi/csi-vol-*/; do
+                [ -d "$subvol" ] || continue
+                subdir=$(ls "$subvol" 2>/dev/null | head -1)
+                [ -n "$subdir" ] || continue
+                volpath="${subvol#/mnt/cephfs/volumes/csi/}"
+                relprefix="${volpath}${subdir}"
+                find "${subvol}${subdir}" -type f -executable -printf '%P\n' > "/tmp/manifest-${subdir}"
+                echo "Manifest for ${relprefix}: $(wc -l < "/tmp/manifest-${subdir}") entries"
+                aws --endpoint-url $ENDPOINT \
+                  s3 cp "/tmp/manifest-${subdir}" "s3://${BUCKET}/${relprefix}/.executable-manifest" \
+                  --only-show-errors
+              done
+
+              aws --endpoint-url $ENDPOINT \
+                s3 sync /mnt/cephfs/volumes/csi/ s3://$BUCKET/ \
                 --delete \
+                --exclude '*/.executable-manifest' \
                 --no-follow-symlinks \
                 --only-show-errors
               echo "Backup completed at $(date)"

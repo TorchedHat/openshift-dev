@@ -136,10 +136,15 @@ spec:
                         aws configure set aws_secret_access_key "\$AWS_SECRET_ACCESS_KEY"
                         aws configure set default.region ca-tor
                         echo "Starting backup for ${NS}/${PVC_NAME} at \$(date)"
+                        find /source -type f -executable -printf '%P\n' > /tmp/.executable-manifest
                         aws --endpoint-url ${ENDPOINT} \
                           s3 sync /source/ s3://${BUCKET}/${NS}/${PVC_NAME}/ \
                           --delete \
+                          --exclude '.executable-manifest' \
                           --no-follow-symlinks \
+                          --only-show-errors
+                        aws --endpoint-url ${ENDPOINT} \
+                          s3 cp /tmp/.executable-manifest s3://${BUCKET}/${NS}/${PVC_NAME}/.executable-manifest \
                           --only-show-errors
                         echo "Backup completed at \$(date)"
                       env:
@@ -169,7 +174,6 @@ spec:
                     - name: user-data
                       persistentVolumeClaim:
                         claimName: ${PVC_NAME}
-                        readOnly: true
               JOBEOF
                 done
               done

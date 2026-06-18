@@ -58,9 +58,14 @@ spec:
           aws configure set aws_secret_access_key "\$AWS_SECRET_ACCESS_KEY"
           aws configure set default.region ca-tor
           echo "Starting backup for $USERNAME at \$(date)"
+          find /source -type f -executable -printf '%P\n' > /tmp/.executable-manifest
           aws --endpoint-url https://s3.ca-tor.cloud-object-storage.appdomain.cloud \
             s3 sync /source/ s3://pytorch-nfs-backup/$USERNAME/ \
+            --exclude '.executable-manifest' \
             --no-follow-symlinks \
+            --only-show-errors
+          aws --endpoint-url https://s3.ca-tor.cloud-object-storage.appdomain.cloud \
+            s3 cp /tmp/.executable-manifest s3://pytorch-nfs-backup/$USERNAME/.executable-manifest \
             --only-show-errors
           echo "Backup completed at \$(date)"
         env:
@@ -90,7 +95,6 @@ spec:
       - name: user-data
         persistentVolumeClaim:
           claimName: $PVC_NAME
-          readOnly: true
 EOF
 
 echo ""

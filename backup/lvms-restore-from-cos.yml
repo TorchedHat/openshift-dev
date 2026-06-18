@@ -22,9 +22,19 @@ spec:
           echo "Starting restore for <username> at $(date)"
           aws --endpoint-url https://s3.ca-tor.cloud-object-storage.appdomain.cloud \
             s3 sync s3://pytorch-nfs-backup/<username>/ /dest/ \
+            --exclude '.executable-manifest' \
             --no-follow-symlinks \
             --only-show-errors
+          aws --endpoint-url https://s3.ca-tor.cloud-object-storage.appdomain.cloud \
+            s3 cp s3://pytorch-nfs-backup/<username>/.executable-manifest /tmp/.executable-manifest \
+            --only-show-errors 2>/dev/null || true
           chown -R 1000:0 /dest/
+          if [ -f /tmp/.executable-manifest ]; then
+            echo "Restoring execute permissions..."
+            while IFS= read -r f; do
+              [ -f "/dest/$f" ] && chmod +x "/dest/$f"
+            done < /tmp/.executable-manifest
+          fi
           echo "Restore completed at $(date)"
         env:
         - name: AWS_ACCESS_KEY_ID
