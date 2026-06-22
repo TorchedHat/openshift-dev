@@ -5,7 +5,24 @@ metadata:
   namespace: <username>
 spec:
   rayVersion: "3.0.0"
-  enableInMemoryAutoscaling: false
+  enableInTreeAutoscaling: true
+  autoscalerOptions:
+    version: v2
+    upscalingMode: Default
+    idleTimeoutSeconds: 60
+    imagePullPolicy: Always
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 0
+    env: []
+    envFrom: []
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
   headGroupSpec:
     serviceType: ClusterIP
     rayStartParams:
@@ -15,6 +32,25 @@ spec:
     template:
       metadata: {}
       spec:
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 0
+        initContainers:
+        - name: init-container
+          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - /scripts/configure_data_dir.sh
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /mnt/data
+            - name: init-script
+              mountPath: /scripts
         containers:
         - name: ray-head
           image: quay.io/rh-ee-sampark/devcontainers:py3.10
@@ -66,6 +102,8 @@ spec:
             - name: gdbinit
               mountPath: /home/devuser/.gdbinit
               subPath: .gdbinit
+            - name: init-script
+              mountPath: /scripts
             - name: dshm
               mountPath: /dev/shm
           lifecycle:
@@ -77,23 +115,30 @@ spec:
         volumes:
           - name: pytorch-eco-data
             persistentVolumeClaim:
-              claimName: pytorch-eco-storage-efs-<username>
+              claimName: pytorch-ibmc-storage-<username>
           - name: gdbinit
             configMap:
               name: gdbinit
+          - name: init-script
+            configMap:
+              name: init-script
+              defaultMode: 0755
           - name: dshm
             emptyDir:
               medium: Memory
   workerGroupSpecs:
   - groupName: cpu-group
-    replicas: 3
-    minReplicas: 3
+    replicas: 0
+    minReplicas: 0
     maxReplicas: 3
     rayStartParams: {}
     template:
       spec:
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 0
         containers:
-        - name: ray-worker
+        - name: ray-cpu-worker
           image: quay.io/rh-ee-sampark/devcontainers:py3.10
           imagePullPolicy: Always
           resources:
@@ -109,6 +154,8 @@ spec:
             - name: gdbinit
               mountPath: /home/devuser/.gdbinit
               subPath: .gdbinit
+            - name: init-script
+              mountPath: /scripts
             - name: dshm
               mountPath: /dev/shm
           env:
@@ -119,22 +166,22 @@ spec:
             - name: CPU_REQUEST
               valueFrom:
                 resourceFieldRef:
-                  containerName: ray-worker
+                  containerName: ray-cpu-worker
                   resource: requests.cpu
             - name: CPU_LIMITS
               valueFrom:
                 resourceFieldRef:
-                  containerName: ray-worker
+                  containerName: ray-cpu-worker
                   resource: limits.cpu
             - name: MEMORY_LIMITS
               valueFrom:
                 resourceFieldRef:
-                  containerName: ray-worker
+                  containerName: ray-cpu-worker
                   resource: limits.memory
             - name: MEMORY_REQUESTS
               valueFrom:
                 resourceFieldRef:
-                  containerName: ray-worker
+                  containerName: ray-cpu-worker
                   resource: requests.memory
             - name: MY_POD_NAME
               valueFrom:
@@ -155,10 +202,104 @@ spec:
         volumes:
           - name: pytorch-eco-data
             persistentVolumeClaim:
-              claimName: pytorch-eco-storage-efs-<username>
+              claimName: pytorch-ibmc-storage-<username>
           - name: gdbinit
             configMap:
               name: gdbinit
+          - name: init-script
+            configMap:
+              name: init-script
+              defaultMode: 0755
+          - name: dshm
+            emptyDir:
+              medium: Memory
+  - groupName: gpu-group
+    replicas: 0
+    minReplicas: 0
+    maxReplicas: 3
+    rayStartParams: {}
+    template:
+      spec:
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 0
+        containers:
+        - name: ray-gpu-worker
+          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 8
+              memory: 50Gi
+              nvidia.com/gpu: "1"
+              rdma/rdma_shared_device_a: "1"
+            requests:
+              cpu: 8
+              memory: 50Gi
+              nvidia.com/gpu: "1"
+              rdma/rdma_shared_device_a: "1"
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
+            - name: gdbinit
+              mountPath: /home/devuser/.gdbinit
+              subPath: .gdbinit
+            - name: init-script
+              mountPath: /scripts
+            - name: dshm
+              mountPath: /dev/shm
+          env:
+            - name: RAY_DISABLE_DOCKER_CPU_WARNING
+              value: "1"
+            - name: TYPE
+              value: "worker"
+            - name: CPU_REQUEST
+              valueFrom:
+                resourceFieldRef:
+                  containerName: ray-gpu-worker
+                  resource: requests.cpu
+            - name: CPU_LIMITS
+              valueFrom:
+                resourceFieldRef:
+                  containerName: ray-gpu-worker
+                  resource: limits.cpu
+            - name: MEMORY_LIMITS
+              valueFrom:
+                resourceFieldRef:
+                  containerName: ray-gpu-worker
+                  resource: limits.memory
+            - name: MEMORY_REQUESTS
+              valueFrom:
+                resourceFieldRef:
+                  containerName: ray-gpu-worker
+                  resource: requests.memory
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          ports:
+          - containerPort: 80
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh","-c","ray stop"]
+        imagePullSecrets:
+          - name: rh-ee-sampark-dev-bot-pull-secret
+        volumes:
+          - name: pytorch-eco-data
+            persistentVolumeClaim:
+              claimName: pytorch-ibmc-storage-<username>
+          - name: gdbinit
+            configMap:
+              name: gdbinit
+          - name: init-script
+            configMap:
+              name: init-script
+              defaultMode: 0755
           - name: dshm
             emptyDir:
               medium: Memory

@@ -25,6 +25,13 @@ storage. Uses three systemd units:
    (skipped if already labeled).
 3. **var-lib-containers.mount** — mounts by label (`/dev/disk/by-label/containers`).
 
+### `kubelet-runtime-timeout.yml`
+
+Increases kubelet's `runtimeRequestTimeout` from the default 2 minutes to 10 minutes.
+This prevents `CreateContainerError: context deadline exceeded` failures when CRI-O
+takes longer than 2 minutes during container volume configuration, which can happen
+with large container images (~26GB) combined with CephFS volume mounts.
+
 ## Important Notes
 
 ### NVMe device naming is not stable
