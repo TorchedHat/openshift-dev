@@ -76,9 +76,10 @@ fi
 # push quay image secret to pull image from quay
 oc apply -f <(sed "s/<username>/$USERNAME/g" rh-ee-sampark-dev-bot-secret.yml)
 
-# create configmaps for bazel and gdbinit
+# create configmaps for bazel, gdbinit, and init-script
 oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/bazel-configmap.yml)
 oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/gdbinit-configmap.yml)
+oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/init-script-configmap.yml)
 
 # create resourcequotas
 oc apply -f <(sed "s/<username>/$USERNAME/g" resourcequotas.yml)
