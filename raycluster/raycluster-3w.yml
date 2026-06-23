@@ -57,11 +57,13 @@ spec:
           imagePullPolicy: Always
           resources:
             limits:
-              cpu: 8
-              memory: 32Gi
+              cpu: 16
+              memory: 128Gi
+              nvidia.com/gpu: '1'
             requests:
-              cpu: 8
-              memory: 32Gi
+              cpu: 4
+              memory: 16Gi
+              nvidia.com/gpu: '1'
           ports:
           - containerPort: 6379
             name: gcs
@@ -99,11 +101,18 @@ spec:
           volumeMounts:
             - name: pytorch-eco-data
               mountPath: /home/devuser
+            - name: ssh-key
+              readOnly: true
+              mountPath: /home/devuser/.ssh
+            - name: gcloud-config
+              readOnly: true
+              mountPath: /home/devuser/.config/gcloud
+            - name: bazelrc
+              mountPath: /home/devuser/.bazelrc
+              subPath: .bazelrc
             - name: gdbinit
               mountPath: /home/devuser/.gdbinit
               subPath: .gdbinit
-            - name: init-script
-              mountPath: /scripts
             - name: dshm
               mountPath: /dev/shm
           lifecycle:
@@ -113,12 +122,30 @@ spec:
         imagePullSecrets:
           - name: rh-ee-sampark-dev-bot-pull-secret
         volumes:
+          - name: ssh-key
+            secret:
+              secretName: <username>-git-ssh-key
+              items:
+                - key: ssh-privatekey
+                  path: id_ed25519
+                - key: ssh-publickey
+                  path: id_ed25519.pub
+                - key: known_hosts
+                  path: known_hosts
+              defaultMode: 0640
+          - name: gcloud-config
+            secret:
+              secretName: <username>-gcloud-config
+              defaultMode: 0640
           - name: pytorch-eco-data
             persistentVolumeClaim:
               claimName: pytorch-ibmc-storage-<username>
           - name: gdbinit
             configMap:
               name: gdbinit
+          - name: bazelrc
+            configMap:
+              name: bazelrc
           - name: init-script
             configMap:
               name: init-script
@@ -214,9 +241,9 @@ spec:
             emptyDir:
               medium: Memory
   - groupName: gpu-group
-    replicas: 0
-    minReplicas: 0
-    maxReplicas: 3
+    replicas: 2
+    minReplicas: 2
+    maxReplicas: 10
     rayStartParams: {}
     template:
       spec:
