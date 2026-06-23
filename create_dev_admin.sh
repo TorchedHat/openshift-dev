@@ -27,33 +27,35 @@ else
   exit 1
 fi
 
+NAMESPACE=$(echo "$USERNAME" | tr '[:upper:]' '[:lower:]')
+
 # create namespace for the user
-oc apply -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
+oc apply -f <(sed "s/<username>/$NAMESPACE/g" namespace.yml)
 
 # Apply anyuid to bypass SCC.
-oc adm policy add-scc-to-user anyuid -z default -n $USERNAME
+oc adm policy add-scc-to-user anyuid -z default -n $NAMESPACE
 
 # Allow hostNetwork for UCX-based RDMA workloads (vLLM/NIXL, OpenMPI).
-oc adm policy add-scc-to-user hostnetwork -z default -n $USERNAME
+oc adm policy add-scc-to-user hostnetwork -z default -n $NAMESPACE
 
 # Grant cluster-reader for read access to non-namespaced resources (nodes, etc.).
 oc adm policy add-cluster-role-to-user cluster-reader "$IDENTITY"
 
 # Apply edit role to the user to allow them to create resources in their namespace.
-oc adm policy add-role-to-user edit "$IDENTITY" -n $USERNAME
+oc adm policy add-role-to-user edit "$IDENTITY" -n $NAMESPACE
 
 # create RBAC for the user
-oc apply -f <(sed -e "s/<username>/$USERNAME/g" -e "s/<email>/$IDENTITY/g" rbac.yml)
+oc apply -f <(sed -e "s/<username>/$NAMESPACE/g" -e "s/<email>/$IDENTITY/g" rbac.yml)
 
 # create PVC for the user (auto-detect storage class)
 if oc get sc ocs-storagecluster-cephfs &>/dev/null; then
-  oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/persistent-workspace-pvc.yml)
+  oc apply -f <(sed "s/<username>/$NAMESPACE/g" pvc/persistent-workspace-pvc.yml)
   CREDS_SOURCE_NS="openshift-storage"
 elif oc get sc lvms-nvme-vg &>/dev/null; then
-  oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/lvms-user-pvc.yml)
+  oc apply -f <(sed "s/<username>/$NAMESPACE/g" pvc/lvms-user-pvc.yml)
   CREDS_SOURCE_NS="nfs-server"
 elif oc get sc nfs-rwx &>/dev/null; then
-  oc apply -f <(sed "s/<username>/$USERNAME/g" pvc/pytorch-nfs-rwx-pvc.yml)
+  oc apply -f <(sed "s/<username>/$NAMESPACE/g" pvc/pytorch-nfs-rwx-pvc.yml)
   CREDS_SOURCE_NS="nfs-server"
 else
   echo "ERROR: No supported storage class found (ocs-storagecluster-cephfs, lvms-nvme-vg, or nfs-rwx)"
@@ -66,7 +68,7 @@ if oc get secret cos-backup-creds -n "$CREDS_SOURCE_NS" &>/dev/null; then
     python3 -c "
 import sys, json
 s = json.load(sys.stdin)
-s['metadata']['namespace'] = '$USERNAME'
+s['metadata']['namespace'] = '$NAMESPACE'
 for k in ['uid', 'resourceVersion', 'creationTimestamp', 'managedFields']:
     s['metadata'].pop(k, None)
 json.dump(s, sys.stdout)
@@ -74,12 +76,12 @@ json.dump(s, sys.stdout)
 fi
 
 # push quay image secret to pull image from quay
-oc apply -f <(sed "s/<username>/$USERNAME/g" rh-ee-sampark-dev-bot-secret.yml)
+oc apply -f <(sed "s/<username>/$NAMESPACE/g" rh-ee-sampark-dev-bot-secret.yml)
 
 # create configmaps for bazel, gdbinit, and init-script
-oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/bazel-configmap.yml)
-oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/gdbinit-configmap.yml)
-oc apply -f <(sed "s/<username>/$USERNAME/g" config_map/init-script-configmap.yml)
+oc apply -f <(sed "s/<username>/$NAMESPACE/g" config_map/bazel-configmap.yml)
+oc apply -f <(sed "s/<username>/$NAMESPACE/g" config_map/gdbinit-configmap.yml)
+oc apply -f <(sed "s/<username>/$NAMESPACE/g" config_map/init-script-configmap.yml)
 
 # create resourcequotas
-oc apply -f <(sed "s/<username>/$USERNAME/g" resourcequotas.yml)
+oc apply -f <(sed "s/<username>/$NAMESPACE/g" resourcequotas.yml)
