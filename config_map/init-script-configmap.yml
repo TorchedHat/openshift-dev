@@ -22,8 +22,10 @@ data:
         rm -f "$f"
       done
     fi
-    find /home/devuser -type f -executable 2>/dev/null | while read f; do
+    find /home/devuser -type d -exec test -d '{}/.git' \; -prune -o \
+      -type f -executable -print 2>/dev/null | while read f; do
       dest="/mnt/data${f#/home/devuser}"
       [ -f "$dest" ] && chmod +x "$dest"
     done
-    find /mnt/data -path '*/bin/*' -type f ! -executable -print0 2>/dev/null | xargs -0 -r chmod +x 2>/dev/null || true
+    find /mnt/data -type d -exec test -d '{}/.git' \; -prune -o \
+      -path '*/bin/*' -type f ! -executable -print0 2>/dev/null | xargs -0 -r chmod +x 2>/dev/null || true
