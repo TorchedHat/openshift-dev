@@ -12,6 +12,16 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+        cuda-version: ['12.9', '13.0']
+        include:
+          - cuda-version: '12.9'
+            fedora-version: '41'
+            cudnn-version: '9.6.0.74'
+            cudnn-cuda-suffix: 'cuda12'
+          - cuda-version: '13.0'
+            fedora-version: '42'
+            cudnn-version: '9.15.0.58'
+            cudnn-cuda-suffix: 'cuda13'
     steps:
       - uses: actions/checkout@v4
 
@@ -20,10 +30,15 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
           sudo docker image prune -af
 
-      - name: Build image (Python ${{ matrix.python-version }})
+      - name: Build image (Python ${{ matrix.python-version }}, CUDA ${{ matrix.cuda-version }})
         uses: docker/build-push-action@v7
         with:
           context: .
           file: .devcontainer/Dockerfile
           push: false
-          build-args: PY_VER=${{ matrix.python-version }}
+          build-args: |
+            PY_VER=${{ matrix.python-version }}
+            FEDORA_VERSION=${{ matrix.fedora-version }}
+            CUDA_VERSION=${{ matrix.cuda-version }}
+            CUDNN_VERSION=${{ matrix.cudnn-version }}
+            CUDNN_CUDA_SUFFIX=${{ matrix.cudnn-cuda-suffix }}

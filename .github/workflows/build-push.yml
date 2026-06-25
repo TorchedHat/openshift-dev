@@ -14,6 +14,16 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+        cuda-version: ['12.9', '13.0']
+        include:
+          - cuda-version: '12.9'
+            fedora-version: '41'
+            cudnn-version: '9.6.0.74'
+            cudnn-cuda-suffix: 'cuda12'
+          - cuda-version: '13.0'
+            fedora-version: '42'
+            cudnn-version: '9.15.0.58'
+            cudnn-cuda-suffix: 'cuda13'
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +45,12 @@ jobs:
           context: .
           file: .devcontainer/Dockerfile
           push: true
-          build-args: PY_VER=${{ matrix.python-version }}
+          build-args: |
+            PY_VER=${{ matrix.python-version }}
+            FEDORA_VERSION=${{ matrix.fedora-version }}
+            CUDA_VERSION=${{ matrix.cuda-version }}
+            CUDNN_VERSION=${{ matrix.cudnn-version }}
+            CUDNN_CUDA_SUFFIX=${{ matrix.cudnn-cuda-suffix }}
           tags: |
-            quay.io/rh-ee-sampark/devcontainers:py${{ matrix.python-version }}
-            ${{ matrix.python-version == '3.10' && 'quay.io/rh-ee-sampark/devcontainers:latest' || '' }}
+            quay.io/rh-ee-sampark/devcontainers:py${{ matrix.python-version }}${{ matrix.cuda-version != '12.9' && format('-cuda{0}', matrix.cuda-version) || '' }}
+            ${{ matrix.python-version == '3.10' && matrix.cuda-version == '12.9' && 'quay.io/rh-ee-sampark/devcontainers:latest' || '' }}

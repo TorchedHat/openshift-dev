@@ -3,14 +3,20 @@ ARG OS_TYPE=x86_64
 ARG PY_VER=3.10
 ARG CONDA_VER=latest
 ARG FEDORA_VERSION=41
+ARG CUDA_VERSION=12.9
+ARG CUDNN_VERSION=9.6.0.74
+ARG CUDNN_CUDA_SUFFIX=cuda12
 
 #Base image
 FROM quay.io/foundata/fedora${FEDORA_VERSION}-itt:latest
 
-# Use the above args 
+# Use the above args
 ARG CONDA_VER
 ARG OS_TYPE
 ARG FEDORA_VERSION
+ARG CUDA_VERSION
+ARG CUDNN_VERSION
+ARG CUDNN_CUDA_SUFFIX
 
 # Run as root for system-level installs
 USER root
@@ -67,21 +73,16 @@ RUN mkdir -p -m 0700 /home/devuser/.ssh && ssh-keyscan github.com >> /home/devus
 
 # Install gcc c++ (may change for new versions). Also installs gcc.
 # fedora 41 does not link gcc and g++ for version 13 — add manually.
-RUN dnf install -y gcc13-c++-13.3.1-2.fc${FEDORA_VERSION}.1 \
+RUN dnf install -y gcc13-c++ \
     && dnf clean all \
     && alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
     && alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
 
-# Install Cuda Toolkit for fedora 41 (single layer to avoid keeping the ~4GB RPM)
-RUN mkdir ./cuda-toolkit \
-    && cd ./cuda-toolkit \
-    && wget https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
-    && rpm -i cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
-    && rm -f cuda-repo-fedora41-12-9-local-12.9.1_575.57.08-1.x86_64.rpm \
-    && cd / && rm -rf ./cuda-toolkit \
-    && dnf -y install cuda-toolkit-12-9 \
-    && dnf clean all \
-    && rm -rf /var/cuda-repo-fedora41-12-9-local*
+# Install CUDA Toolkit via network repo
+RUN CUDA_PKG_VERSION=$(echo ${CUDA_VERSION} | tr '.' '-') \
+    && dnf config-manager addrepo --from-repofile=https://developer.download.nvidia.com/compute/cuda/repos/fedora${FEDORA_VERSION}/x86_64/cuda-fedora${FEDORA_VERSION}.repo \
+    && dnf -y install cuda-toolkit-${CUDA_PKG_VERSION} \
+    && dnf clean all
 
 #install g++ compiler that is compatiable with nvcc
 # RUN dnf install gcc13-c++
@@ -90,13 +91,13 @@ RUN mkdir ./cuda-toolkit \
 # #update path to include nvcc
 # RUN export PATH=${PATH}:/usr/local/cuda-12.9/bin
 
-# Install cudnn (single layer)
+# Install cuDNN (single layer)
 RUN mkdir ./cudnn \
     && cd cudnn \
-    && wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.6.0.74_cuda12-archive.tar.xz \
-    && tar xvf cudnn-linux-x86_64-9.6.0.74_cuda12-archive.tar.xz \
-    && mv ./cudnn-linux-x86_64-9.6.0.74_cuda12-archive/include/* /usr/local/cuda/include \
-    && mv ./cudnn-linux-x86_64-9.6.0.74_cuda12-archive/lib/* /usr/local/cuda/lib64 \
+    && wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive.tar.xz \
+    && tar xvf cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive.tar.xz \
+    && mv ./cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive/include/* /usr/local/cuda/include \
+    && mv ./cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive/lib/* /usr/local/cuda/lib64 \
     && cd / && rm -rf ./cudnn
 
 #Update file permissions
@@ -189,8 +190,8 @@ ENV CLAUDE_CODE_USE_VERTEX=1 \
     ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude \
     USER=devuser \
     NVCC_CCBIN=g++-13 \
-    PATH="/usr/local/cuda-12.9/bin:${PATH}" \
-    CUDA_HOME=/usr/local/cuda-12.9 \
+    PATH="/usr/local/cuda-${CUDA_VERSION}/bin:${PATH}" \
+    CUDA_HOME=/usr/local/cuda-${CUDA_VERSION} \
     CC=gcc-13 \
     CXX=g++-13 \
     MAX_JOBS=25 \
