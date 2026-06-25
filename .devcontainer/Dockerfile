@@ -6,6 +6,7 @@ ARG FEDORA_VERSION=41
 ARG CUDA_VERSION=12.9
 ARG CUDNN_VERSION=9.6.0.74
 ARG CUDNN_CUDA_SUFFIX=cuda12
+ARG GCC_SUFFIX=-13
 
 #Base image
 FROM quay.io/foundata/fedora${FEDORA_VERSION}-itt:latest
@@ -17,6 +18,7 @@ ARG FEDORA_VERSION
 ARG CUDA_VERSION
 ARG CUDNN_VERSION
 ARG CUDNN_CUDA_SUFFIX
+ARG GCC_SUFFIX
 
 # Run as root for system-level installs
 USER root
@@ -72,11 +74,15 @@ RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/r
 RUN mkdir -p -m 0700 /home/devuser/.ssh && ssh-keyscan github.com >> /home/devuser/.ssh/known_hosts
 
 # Install gcc c++ (may change for new versions). Also installs gcc.
-# fedora 41 does not link gcc and g++ for version 13 — add manually.
-RUN dnf install -y gcc13-c++ \
-    && dnf clean all \
-    && alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
-    && alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
+# CUDA 12.x requires gcc-13; CUDA 13.x supports the system compiler.
+RUN if [ -n "${GCC_SUFFIX}" ]; then \
+        dnf install -y "gcc$(echo ${GCC_SUFFIX} | tr -d '-')-c++" \
+        && alternatives --install /usr/bin/gcc gcc "/usr/bin/gcc${GCC_SUFFIX}" 100 \
+        && alternatives --install /usr/bin/g++ g++ "/usr/bin/g++${GCC_SUFFIX}" 100; \
+    else \
+        dnf install -y gcc-c++; \
+    fi \
+    && dnf clean all
 
 # Install CUDA Toolkit via network repo
 RUN CUDA_PKG_VERSION=$(echo ${CUDA_VERSION} | tr '.' '-') \
@@ -170,10 +176,12 @@ RUN echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25 --dis
 # install claude
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
-# Forcefully remove old symlinks if they exist and are not managed
-RUN rm -f /usr/bin/gcc /usr/bin/g++ && \
-    ln -s /usr/bin/gcc-13 /usr/bin/gcc && \
-    ln -s /usr/bin/g++-13 /usr/bin/g++
+# Ensure gcc/g++ point to the correct versioned compiler
+RUN if [ -n "${GCC_SUFFIX}" ]; then \
+        rm -f /usr/bin/gcc /usr/bin/g++ \
+        && ln -s "/usr/bin/gcc${GCC_SUFFIX}" /usr/bin/gcc \
+        && ln -s "/usr/bin/g++${GCC_SUFFIX}" /usr/bin/g++; \
+    fi
 
 # NFS files may be owned by a different UID than the container user
 RUN git config --system --add safe.directory '*'
@@ -189,11 +197,11 @@ ENV CLAUDE_CODE_USE_VERTEX=1 \
     CLOUD_ML_REGION=global \
     ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude \
     USER=devuser \
-    NVCC_CCBIN=g++-13 \
+    NVCC_CCBIN=g++${GCC_SUFFIX} \
     PATH="/usr/local/cuda-${CUDA_VERSION}/bin:${PATH}" \
     CUDA_HOME=/usr/local/cuda-${CUDA_VERSION} \
-    CC=gcc-13 \
-    CXX=g++-13 \
+    CC=gcc${GCC_SUFFIX} \
+    CXX=g++${GCC_SUFFIX} \
     MAX_JOBS=25 \
     CMAKE_PREFIX_PATH=/home/devuser/miniconda \
     RAY_INSTALL_CPP=0 \
