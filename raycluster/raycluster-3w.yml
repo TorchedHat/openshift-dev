@@ -51,6 +51,27 @@ spec:
               mountPath: /mnt/data
             - name: init-script
               mountPath: /scripts
+        - name: install-editable-ray
+          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SITE=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+              rm -rf "$SITE/ray" "$SITE"/ray-*.dist-info
+              echo "import sys; sys.path.insert(0, '/home/devuser/devcontainers/ray/python')" > "$SITE/ray-editable.pth"
+              BIN=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['scripts'])")
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.scripts.scripts import main\nmain()\n' > "$BIN/ray" && chmod +x "$BIN/ray"
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.tune.cli.scripts import cli\ncli()\n' > "$BIN/tune" && chmod +x "$BIN/tune"
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.serve.scripts import cli\ncli()\n' > "$BIN/serve" && chmod +x "$BIN/serve"
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
         containers:
         - name: ray-head
           image: quay.io/rh-ee-sampark/devcontainers:py3.10
@@ -59,11 +80,9 @@ spec:
             limits:
               cpu: 16
               memory: 128Gi
-              nvidia.com/gpu: '1'
             requests:
               cpu: 4
               memory: 16Gi
-              nvidia.com/gpu: '1'
           ports:
           - containerPort: 6379
             name: gcs
@@ -164,6 +183,28 @@ spec:
         securityContext:
           runAsUser: 1000
           runAsGroup: 0
+        initContainers:
+        - name: install-editable-ray
+          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SITE=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+              rm -rf "$SITE/ray" "$SITE"/ray-*.dist-info
+              echo "import sys; sys.path.insert(0, '/home/devuser/devcontainers/ray/python')" > "$SITE/ray-editable.pth"
+              BIN=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['scripts'])")
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.scripts.scripts import main\nmain()\n' > "$BIN/ray" && chmod +x "$BIN/ray"
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.tune.cli.scripts import cli\ncli()\n' > "$BIN/tune" && chmod +x "$BIN/tune"
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.serve.scripts import cli\ncli()\n' > "$BIN/serve" && chmod +x "$BIN/serve"
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
         containers:
         - name: ray-cpu-worker
           image: quay.io/rh-ee-sampark/devcontainers:py3.10
@@ -241,8 +282,8 @@ spec:
             emptyDir:
               medium: Memory
   - groupName: gpu-group
-    replicas: 2
-    minReplicas: 2
+    replicas: 3
+    minReplicas: 3
     maxReplicas: 10
     rayStartParams: {}
     template:
@@ -250,6 +291,28 @@ spec:
         securityContext:
           runAsUser: 1000
           runAsGroup: 0
+        initContainers:
+        - name: install-editable-ray
+          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SITE=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+              rm -rf "$SITE/ray" "$SITE"/ray-*.dist-info
+              echo "import sys; sys.path.insert(0, '/home/devuser/devcontainers/ray/python')" > "$SITE/ray-editable.pth"
+              BIN=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['scripts'])")
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.scripts.scripts import main\nmain()\n' > "$BIN/ray" && chmod +x "$BIN/ray"
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.tune.cli.scripts import cli\ncli()\n' > "$BIN/tune" && chmod +x "$BIN/tune"
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.serve.scripts import cli\ncli()\n' > "$BIN/serve" && chmod +x "$BIN/serve"
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
         containers:
         - name: ray-gpu-worker
           image: quay.io/rh-ee-sampark/devcontainers:py3.10
