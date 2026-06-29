@@ -23,20 +23,17 @@ ARG GCC_SUFFIX
 # Run as root for system-level installs
 USER root
 
-# Create non-root user (GID 0 follows OpenShift convention for random UID support)
-RUN useradd -u 1000 -g 0 -m -d /home/devuser -s /bin/bash devuser
-
-# Add google cloud cli repo
-RUN printf "[google-cloud-cli]\n\
+# Layer 1: User creation, system packages, gh CLI, gcc, ssh, nix config
+RUN useradd -u 1000 -g 0 -m -d /home/devuser -s /bin/bash devuser \
+    && printf "[google-cloud-cli]\n\
 name=Google Cloud CLI\n\
 baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el9-x86_64\n\
 enabled=1\n\
 gpgcheck=1\n\
 repo_gpgcheck=0\n\
-gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/yum.repos.d/google-cloud-sdk.repo
-
-RUN dnf upgrade --refresh -y && \
-    dnf install -y \
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/yum.repos.d/google-cloud-sdk.repo \
+    && dnf upgrade --refresh -y \
+    && dnf install -y \
         python3 \
         python3-devel \
         python3-pip \
@@ -62,54 +59,37 @@ RUN dnf upgrade --refresh -y && \
         htop \
         nix \
         nodejs \
-        sudo && \
-    dnf clean all
+        sudo \
+    && dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo \
+    && dnf install gh --repo gh-cli -y \
+    && if [ -n "${GCC_SUFFIX}" ]; then \
+           dnf install -y "gcc$(echo ${GCC_SUFFIX} | tr -d '-')-c++" \
+           && alternatives --install /usr/bin/gcc gcc "/usr/bin/gcc${GCC_SUFFIX}" 100 \
+           && alternatives --install /usr/bin/g++ g++ "/usr/bin/g++${GCC_SUFFIX}" 100; \
+       else \
+           dnf install -y gcc-c++; \
+       fi \
+    && dnf clean all \
+    && mkdir -p /home/devuser/.config/nix \
+    && echo 'experimental-features = nix-command flakes' > /home/devuser/.config/nix/nix.conf \
+    && mkdir -p -m 0700 /home/devuser/.ssh \
+    && ssh-keyscan github.com >> /home/devuser/.ssh/known_hosts
 
-# Enable Nix flakes
-RUN mkdir -p /home/devuser/.config/nix \
-    && echo 'experimental-features = nix-command flakes' > /home/devuser/.config/nix/nix.conf
-
-RUN dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo && dnf install gh --repo gh-cli -y && dnf clean all
-
-RUN mkdir -p -m 0700 /home/devuser/.ssh && ssh-keyscan github.com >> /home/devuser/.ssh/known_hosts
-
-# Install gcc c++ (may change for new versions). Also installs gcc.
-# CUDA 12.x requires gcc-13; CUDA 13.x supports the system compiler.
-RUN if [ -n "${GCC_SUFFIX}" ]; then \
-        dnf install -y "gcc$(echo ${GCC_SUFFIX} | tr -d '-')-c++" \
-        && alternatives --install /usr/bin/gcc gcc "/usr/bin/gcc${GCC_SUFFIX}" 100 \
-        && alternatives --install /usr/bin/g++ g++ "/usr/bin/g++${GCC_SUFFIX}" 100; \
-    else \
-        dnf install -y gcc-c++; \
-    fi \
-    && dnf clean all
-
-# Install CUDA Toolkit via network repo
+# Layer 2: CUDA toolkit + cuDNN
 RUN CUDA_PKG_VERSION=$(echo ${CUDA_VERSION} | tr '.' '-') \
     && dnf config-manager addrepo --from-repofile=https://developer.download.nvidia.com/compute/cuda/repos/fedora${FEDORA_VERSION}/x86_64/cuda-fedora${FEDORA_VERSION}.repo \
     && dnf -y install cuda-toolkit-${CUDA_PKG_VERSION} \
-    && dnf clean all
-
-#install g++ compiler that is compatiable with nvcc
-# RUN dnf install gcc13-c++
-# RUN export NVCC_CCBIN='g++-13'
-
-# #update path to include nvcc
-# RUN export PATH=${PATH}:/usr/local/cuda-12.9/bin
-
-# Install cuDNN (single layer)
-RUN mkdir ./cudnn \
-    && cd cudnn \
+    && dnf clean all \
+    && mkdir /tmp/cudnn \
+    && cd /tmp/cudnn \
     && wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive.tar.xz \
     && tar xvf cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive.tar.xz \
     && mv ./cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive/include/* /usr/local/cuda/include \
     && mv ./cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive/lib/* /usr/local/cuda/lib64 \
-    && cd / && rm -rf ./cudnn
+    && cd / && rm -rf /tmp/cudnn \
+    && chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn*
 
-#Update file permissions
-RUN chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn*
-
-# Install miniconda to /home/devuser/miniconda (single layer)
+# Layer 3: Conda + Python
 ARG PY_VER
 ENV HOME=/home/devuser
 RUN curl -fLO --retry 3 --retry-delay 5 "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${OS_TYPE}.sh" \
@@ -121,35 +101,31 @@ RUN curl -fLO --retry 3 --retry-delay 5 "https://github.com/conda-forge/miniforg
     && /home/devuser/miniconda/bin/conda clean -afy
 ENV PATH=/home/devuser/miniconda/bin:${PATH}
 
-#Install torch requirements.
+# Layer 4: PyTorch requirements + triton
 ARG PYTORCH_RAW=https://raw.githubusercontent.com/pytorch/pytorch/refs/heads/main
+RUN mkdir -p /build_pytorch/scripts /build_pytorch/.ci/docker/ci_commit_pins \
+    && curl -fL -o /build_pytorch/requirements.txt ${PYTORCH_RAW}/requirements.txt \
+    && curl -fL -o /build_pytorch/requirements-build.txt ${PYTORCH_RAW}/requirements-build.txt \
+    && curl -fL -o /build_pytorch/Makefile ${PYTORCH_RAW}/Makefile \
+    && curl -fL -o /build_pytorch/scripts/install_triton_wheel.sh ${PYTORCH_RAW}/scripts/install_triton_wheel.sh \
+    && curl -fL -o /build_pytorch/.ci/docker/triton_version.txt ${PYTORCH_RAW}/.ci/docker/triton_version.txt \
+    && curl -fL -o /build_pytorch/.ci/docker/triton_xpu_version.txt ${PYTORCH_RAW}/.ci/docker/triton_xpu_version.txt \
+    && curl -fL -o /build_pytorch/.ci/docker/ci_commit_pins/triton.txt ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton.txt \
+    && curl -fL -o /build_pytorch/.ci/docker/ci_commit_pins/triton-xpu.txt ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton-xpu.txt \
+    && chmod +x /build_pytorch/scripts/install_triton_wheel.sh \
+    && /home/devuser/miniconda/bin/pip install --no-cache-dir -r /build_pytorch/requirements.txt mkl-static mkl-include \
+    && cd /build_pytorch && make triton \
+    && (/home/devuser/miniconda/bin/pip uninstall torch ray -y 2>/dev/null || true) \
+    && rm -rf /build_pytorch
 
-RUN mkdir /build_pytorch
-ADD ${PYTORCH_RAW}/requirements.txt /build_pytorch/requirements.txt
-ADD ${PYTORCH_RAW}/requirements-build.txt /build_pytorch/requirements-build.txt
-ADD ${PYTORCH_RAW}/Makefile /build_pytorch/Makefile
-RUN /home/devuser/miniconda/bin/pip install --no-cache-dir -r /build_pytorch/requirements.txt mkl-static mkl-include
-
-#Install triton.
-RUN mkdir /build_pytorch/scripts
-ADD ${PYTORCH_RAW}/scripts/install_triton_wheel.sh /build_pytorch/scripts/install_triton_wheel.sh
-RUN chmod +x /build_pytorch/scripts/install_triton_wheel.sh && mkdir -p /build_pytorch/.ci/docker/
-ADD ${PYTORCH_RAW}/.ci/docker/triton_version.txt /build_pytorch/.ci/docker/triton_version.txt
-ADD ${PYTORCH_RAW}/.ci/docker/triton_xpu_version.txt /build_pytorch/.ci/docker/triton_xpu_version.txt
-RUN mkdir -p /build_pytorch/.ci/docker/ci_commit_pins/
-ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton.txt /build_pytorch/.ci/docker/ci_commit_pins/triton.txt
-ADD ${PYTORCH_RAW}/.ci/docker/ci_commit_pins/triton-xpu.txt /build_pytorch/.ci/docker/ci_commit_pins/triton-xpu.txt
-RUN cd /build_pytorch && make triton && rm -rf /build_pytorch
-
-# Install Ray
+# Layer 5: Ray requirements + bazel
 ARG RAY_RAW=https://raw.githubusercontent.com/ray-project/ray/refs/heads/master
-
-RUN mkdir /build_ray
-ADD ${RAY_RAW}/python/requirements.txt /build_ray/requirements.txt
-ADD ${RAY_RAW}/python/requirements/test-requirements.txt /build_ray/test-requirements.txt
-ADD ${RAY_RAW}/python/requirements_compiled.txt /build_ray/requirements_compiled.txt
-
-RUN PY_MINOR=$(/home/devuser/miniconda/bin/python -c "import sys; print(sys.version_info.minor)") \
+RUN mkdir -p /build_ray \
+    && curl -fL -o /build_ray/requirements.txt ${RAY_RAW}/python/requirements.txt \
+    && curl -fL -o /build_ray/test-requirements.txt ${RAY_RAW}/python/requirements/test-requirements.txt \
+    && curl -fL -o /build_ray/requirements_compiled.txt ${RAY_RAW}/python/requirements_compiled.txt \
+    && curl -fL -o /build_ray/.bazelversion ${RAY_RAW}/.bazelversion \
+    && PY_MINOR=$(/home/devuser/miniconda/bin/python -c "import sys; print(sys.version_info.minor)") \
     && cd /build_ray \
     && if [ "$PY_MINOR" -lt 13 ]; then \
          sed -i 's/importlib-metadata==6.11.0/importlib-metadata>=7.0.0/' test-requirements.txt \
@@ -163,33 +139,23 @@ RUN PY_MINOR=$(/home/devuser/miniconda/bin/python -c "import sys; print(sys.vers
     && (/home/devuser/miniconda/bin/pip uninstall torch -y 2>/dev/null || true) \
     && (/home/devuser/miniconda/bin/pip uninstall ray -y 2>/dev/null || true) \
     && /home/devuser/miniconda/bin/pip install --no-cache-dir "numpy>=1.24,<1.27" \
-    && rm -rf /build_ray
-ADD ${RAY_RAW}/.bazelversion /build_ray/.bazelversion
-RUN BAZEL_VER=$(cat /build_ray/.bazelversion | tr -d '[:space:]')\
-    && curl -fLO "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VER}/bazel-${BAZEL_VER}-installer-linux-x86_64.sh"\
-    && chmod +x "bazel-${BAZEL_VER}-installer-linux-x86_64.sh"\
-    && ./"bazel-${BAZEL_VER}-installer-linux-x86_64.sh"\
-    && rm -f "bazel-${BAZEL_VER}-installer-linux-x86_64.sh"\
-    && rm -rf /build_ray
-# set RAM and CPU limits for the ray build
-RUN echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25 --disk_cache=/home/devuser/bazel-cache" >> /home/devuser/.bazelrc
+    && BAZEL_VER=$(cat /build_ray/.bazelversion | tr -d '[:space:]') \
+    && curl -fLO "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VER}/bazel-${BAZEL_VER}-installer-linux-x86_64.sh" \
+    && chmod +x "bazel-${BAZEL_VER}-installer-linux-x86_64.sh" \
+    && ./"bazel-${BAZEL_VER}-installer-linux-x86_64.sh" \
+    && rm -f "bazel-${BAZEL_VER}-installer-linux-x86_64.sh" \
+    && rm -rf /build_ray \
+    && echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25 --disk_cache=/home/devuser/bazel-cache" >> /home/devuser/.bazelrc
 
-# install claude
-RUN curl -fsSL https://claude.ai/install.sh | bash
-
-# Ensure gcc/g++ point to the correct versioned compiler
-RUN if [ -n "${GCC_SUFFIX}" ]; then \
-        rm -f /usr/bin/gcc /usr/bin/g++ \
-        && ln -s "/usr/bin/gcc${GCC_SUFFIX}" /usr/bin/gcc \
-        && ln -s "/usr/bin/g++${GCC_SUFFIX}" /usr/bin/g++; \
-    fi
-
-# NFS files may be owned by a different UID than the container user
-RUN git config --system --add safe.directory '*'
-
-# Ensure devuser owns home and group can write (OpenShift random UID is in GID 0)
-# Allow devuser to install system packages at runtime via sudo (e.g. sudo dnf install ...)
-RUN echo "devuser ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/devuser \
+# Layer 6: Claude, gcc symlinks, git config, sudoers, permissions
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && if [ -n "${GCC_SUFFIX}" ]; then \
+           rm -f /usr/bin/gcc /usr/bin/g++ \
+           && ln -s "/usr/bin/gcc${GCC_SUFFIX}" /usr/bin/gcc \
+           && ln -s "/usr/bin/g++${GCC_SUFFIX}" /usr/bin/g++; \
+       fi \
+    && git config --system --add safe.directory '*' \
+    && echo "devuser ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/devuser \
     && chmod 0440 /etc/sudoers.d/devuser \
     && chown -R devuser:0 /home/devuser && chmod -R g=u /home/devuser
 
