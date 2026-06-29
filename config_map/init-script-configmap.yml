@@ -6,13 +6,9 @@ metadata:
 data:
   configure_data_dir.sh: |
     #!/bin/bash
-    cp -rn --no-preserve=ownership /home/devuser/. /mnt/data/
-    find /home/devuser -type l 2>/dev/null | while read link; do
-      dest="/mnt/data${link#/home/devuser}"
-      mkdir -p "$(dirname "$dest")"
-      rm -f "$dest" 2>/dev/null
-      cp -a "$link" "$dest" 2>/dev/null
-    done
+    rsync -a --ignore-existing --no-owner --no-group \
+      --exclude='.git' \
+      /home/devuser/ /mnt/data/
     if [ -d /mnt/data/miniconda/lib ]; then
       for f in /mnt/data/miniconda/lib/*.so*; do
         [ -f "$f" ] || continue

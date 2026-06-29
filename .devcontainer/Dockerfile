@@ -57,6 +57,7 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/y
         tmux \
         tar \
         htop \
+        rsync \
         nix \
         nodejs \
         sudo \
@@ -115,7 +116,7 @@ RUN mkdir -p /build_pytorch/scripts /build_pytorch/.ci/docker/ci_commit_pins \
     && chmod +x /build_pytorch/scripts/install_triton_wheel.sh \
     && /home/devuser/miniconda/bin/pip install --no-cache-dir -r /build_pytorch/requirements.txt mkl-static mkl-include \
     && cd /build_pytorch && make triton \
-    && (/home/devuser/miniconda/bin/pip uninstall torch ray -y 2>/dev/null || true) \
+    && (/home/devuser/miniconda/bin/pip uninstall torch -y 2>/dev/null || true) \
     && rm -rf /build_pytorch
 
 # Layer 5: Ray requirements + bazel
@@ -137,7 +138,6 @@ RUN mkdir -p /build_ray \
          /home/devuser/miniconda/bin/pip install --no-cache-dir -r requirements.txt pre-commit; \
        fi \
     && (/home/devuser/miniconda/bin/pip uninstall torch -y 2>/dev/null || true) \
-    && (/home/devuser/miniconda/bin/pip uninstall ray -y 2>/dev/null || true) \
     && /home/devuser/miniconda/bin/pip install --no-cache-dir "numpy>=1.24,<1.27" \
     && BAZEL_VER=$(cat /build_ray/.bazelversion | tr -d '[:space:]') \
     && curl -fLO "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VER}/bazel-${BAZEL_VER}-installer-linux-x86_64.sh" \
