@@ -161,6 +161,7 @@ RUN PY_MINOR=$(/home/devuser/miniconda/bin/python -c "import sys; print(sys.vers
          /home/devuser/miniconda/bin/pip install --no-cache-dir -r requirements.txt pre-commit; \
        fi \
     && (/home/devuser/miniconda/bin/pip uninstall torch -y 2>/dev/null || true) \
+    && (/home/devuser/miniconda/bin/pip uninstall ray -y 2>/dev/null || true) \
     && /home/devuser/miniconda/bin/pip install --no-cache-dir "numpy>=1.24,<1.27" \
     && rm -rf /build_ray
 ADD ${RAY_RAW}/.bazelversion /build_ray/.bazelversion
