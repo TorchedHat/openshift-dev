@@ -101,7 +101,6 @@ ENV HOME=/home/devuser
 RUN curl -fLO --retry 3 --retry-delay 5 "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${OS_TYPE}.sh" \
     && bash Miniforge3-Linux-${OS_TYPE}.sh -p /home/devuser/miniconda -b \
     && rm Miniforge3-Linux-${OS_TYPE}.sh \
-    && /home/devuser/miniconda/bin/conda update -y conda \
     && /home/devuser/miniconda/bin/conda init \
     && /home/devuser/miniconda/bin/conda install -c anaconda -y python=${PY_VER} gdb cuda-gdb \
     && /home/devuser/miniconda/bin/conda clean -afy
