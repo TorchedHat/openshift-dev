@@ -111,6 +111,7 @@ spec:
       securityContext:
         runAsUser: 1000
         runAsGroup: 0
+        fsGroup: 0
       imagePullSecrets:
         - name: rh-ee-sampark-dev-bot-pull-secret
       schedulerName: default-scheduler
