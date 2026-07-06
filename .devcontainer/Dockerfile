@@ -161,6 +161,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
     && git config --system --add safe.directory '*' \
     && echo "devuser ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/devuser \
     && chmod 0440 /etc/sudoers.d/devuser \
+    && date -u +%Y%m%d%H%M%S > /home/devuser/.image-build-id \
     && chown -R devuser:0 /home/devuser && chmod -R g=u /home/devuser
 
 # set env variables

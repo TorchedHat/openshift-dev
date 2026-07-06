@@ -6,6 +6,13 @@ metadata:
 data:
   configure_data_dir.sh: |
     #!/bin/bash
+    IMAGE_ID=$(cat /home/devuser/.image-build-id 2>/dev/null)
+    MARKER="/mnt/data/.image-build-id"
+
+    if [ -n "$IMAGE_ID" ] && [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$IMAGE_ID" ]; then
+      exit 0
+    fi
+
     rsync -a --ignore-existing --no-owner --no-group \
       --exclude='.git' \
       /home/devuser/ /mnt/data/
@@ -25,3 +32,5 @@ data:
     done
     find /mnt/data -type d -exec test -d '{}/.git' \; -prune -o \
       -path '*/bin/*' -type f ! -executable -print0 2>/dev/null | xargs -0 -r chmod +x 2>/dev/null || true
+
+    echo "$IMAGE_ID" > "$MARKER"
