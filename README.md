@@ -65,7 +65,7 @@ Run `create_dev_admin.sh` (The following explain the content in case you want to
   4. Apply Role and Role bindings so that user can access created secrets.<br>
     `oc apply -n alice -f <(sed "s/<username>/alice/g" rbac.yml)`
   5. Apply PVC to have persisent folder even if pods are destroyed.<br>
-    `oc apply -n alice -f <(sed "s/<username>/alice/g" pvc/persistent-workspace-pvc.yml)`
+    `oc apply -n alice -f <(sed "s/<username>/alice/g" pvc/cephfs-pvc-mpy.yml)`
   6. Push quay image secret to pull images from quay
     `oc apply -f <(sed "s/<username>/alice/g" rh-ee-sampark-dev-bot-secret.yml)`
   7. Create configmaps for bazel, gdbinit, and init-script
