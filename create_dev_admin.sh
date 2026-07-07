@@ -49,7 +49,7 @@ oc apply -f <(sed -e "s/<username>/$NAMESPACE/g" -e "s/<email>/$IDENTITY/g" rbac
 
 # create PVC for the user (auto-detect storage class)
 if oc get sc ocs-storagecluster-cephfs &>/dev/null; then
-  oc apply -f <(sed "s/<username>/$NAMESPACE/g" pvc/persistent-workspace-pvc.yml)
+  oc apply -f <(sed "s/<username>/$NAMESPACE/g" pvc/cephfs-pvc-mpy.yml)
   CREDS_SOURCE_NS="openshift-storage"
 elif oc get sc lvms-nvme-vg &>/dev/null; then
   oc apply -f <(sed "s/<username>/$NAMESPACE/g" pvc/lvms-user-pvc.yml)
