@@ -1,28 +1,16 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: pytorch-ibmc-storage-<username>
-  namespace: <username>
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: lvms-nvme-vg
-  resources:
-    requests:
-      storage: 250Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
   name: pytorch-py3-11-<username>
   namespace: <username>
 spec:
+  accessModes:
+  - ReadWriteMany
   resources:
     requests:
       storage: 250Gi
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: lvms-nvme-vg
+  storageClassName: ocs-storagecluster-cephfs
+
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -30,12 +18,12 @@ metadata:
   name: pytorch-py3-12-<username>
   namespace: <username>
 spec:
+  accessModes:
+  - ReadWriteMany
   resources:
     requests:
       storage: 250Gi
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: lvms-nvme-vg
+  storageClassName: ocs-storagecluster-cephfs
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -43,12 +31,25 @@ metadata:
   name: pytorch-py3-13-<username>
   namespace: <username>
 spec:
+  accessModes:
+  - ReadWriteMany
   resources:
     requests:
       storage: 250Gi
+  storageClassName: ocs-storagecluster-cephfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pytorch-py3-13-<username>
+  namespace: <username>
+spec:
   accessModes:
-    - ReadWriteOnce
-  storageClassName: lvms-nvme-vg
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 250Gi
+  storageClassName: ocs-storagecluster-cephfs
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -56,9 +57,9 @@ metadata:
   name: pytorch-py3-14-<username>
   namespace: <username>
 spec:
+  accessModes:
+  - ReadWriteMany
   resources:
     requests:
       storage: 250Gi
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: lvms-nvme-vg
+  storageClassName: ocs-storagecluster-cephfs
