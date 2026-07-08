@@ -5,8 +5,8 @@ metadata:
   namespace: <username>
 data:
   .bazelrc: |
-    build --local_ram_resources=HOST_RAM*0.5 
-    build --local_cpu_resources=4 
+    build --local_resources=memory=HOST_RAM*0.5 
+    build --local_resources=cpu=8
     build --disk_cache=/home/devuser/bazel-cache
     build --compilation_mode=dbg
     build --spawn_strategy=local
