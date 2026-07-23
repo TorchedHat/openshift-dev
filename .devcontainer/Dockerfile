@@ -151,8 +151,9 @@ RUN mkdir -p /build_ray \
     && rm -rf /build_ray \
     && echo "build --local_ram_resources=HOST_RAM*.5 --local_cpu_resources=25 --disk_cache=/home/devuser/bazel-cache" >> /home/devuser/.bazelrc
 
-# Layer 6: Claude, gcc symlinks, git config, sudoers, permissions
-RUN curl -fsSL https://claude.ai/install.sh | bash \
+# Layer 6: setuptools, uv, Claude, gcc symlinks, git config, sudoers, permissions
+RUN /home/devuser/miniconda/bin/pip install --no-cache-dir setuptools uv scikit-build \
+    && curl -fsSL https://claude.ai/install.sh | HOME=/home/devuser bash \
     && if [ -n "${GCC_SUFFIX}" ]; then \
            rm -f /usr/bin/gcc /usr/bin/g++ \
            && ln -s "/usr/bin/gcc${GCC_SUFFIX}" /usr/bin/gcc \
@@ -170,7 +171,7 @@ ENV CLAUDE_CODE_USE_VERTEX=1 \
     ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude \
     USER=devuser \
     NVCC_CCBIN=g++${GCC_SUFFIX} \
-    PATH="/usr/local/cuda-${CUDA_VERSION}/bin:${PATH}" \
+    PATH="/home/devuser/.local/bin:/home/devuser/.claude/bin:/usr/local/cuda-${CUDA_VERSION}/bin:${PATH}" \
     CUDA_HOME=/usr/local/cuda-${CUDA_VERSION} \
     CC=gcc${GCC_SUFFIX} \
     CXX=g++${GCC_SUFFIX} \
