@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nvidia-kernel-module-config
+  namespace: nvidia-gpu-operator
+data:
+  nvidia.conf: "NVreg_RestrictProfilingToAdminUsers=0"

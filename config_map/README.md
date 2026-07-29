@@ -34,25 +34,33 @@ admin users. To allow non-admin users to run profiling on MIG devices, set
 the `NVreg_RestrictProfilingToAdminUsers=0` kernel module parameter via a ConfigMap
 referenced by the ClusterPolicy's `kernelModuleConfig`.
 
-Create the ConfigMap in the `nvidia-gpu-operator` namespace:
+Apply the ConfigMap manifest:
 
 ```bash
-oc create configmap nvidia-kernel-module-params -n nvidia-gpu-operator \
-  --from-literal=nvidia.conf="options nvidia NVreg_RestrictProfilingToAdminUsers=0"
+oc apply -f config_map/nvidia-kernel-module-config.yml
 ```
+
+The ConfigMap key must be `nvidia.conf` — the GPU Operator driver startup script reads
+module parameters from `/drivers/nvidia.conf` inside the driver container. The value
+should be bare parameters (e.g. `NVreg_RestrictProfilingToAdminUsers=0`), not the full
+`options nvidia ...` line, because the script wraps them automatically.
 
 Patch the ClusterPolicy to reference it:
 
 ```bash
 oc patch clusterpolicy gpu-cluster-policy --type merge \
-  -p '{"spec":{"driver":{"kernelModuleConfig":{"name":"nvidia-kernel-module-params"}}}}'
+  -p '{"spec":{"driver":{"kernelModuleConfig":{"name":"nvidia-kernel-module-config"}}}}'
 ```
 
-Restart the driver pods to pick up the change:
+Restart the driver pods to pick up the change (uses OnDelete strategy, so pods must
+be deleted manually):
 
 ```bash
 oc delete pod -n nvidia-gpu-operator -l app=nvidia-driver-daemonset
 ```
+
+GPU workloads must be evicted from each node before the driver pod can restart, since
+the nvidia kernel module cannot be unloaded while GPUs are in use.
 
 Verify from the driver pod:
 
