@@ -36,9 +36,20 @@ spec:
               # mount cephfs using admin credentials
               ADMIN_KEY=$(grep 'key =' /etc/ceph-admin/keyring | awk '{print $3}')
               CEPH_FSID=$(cat /etc/ceph-fsid/fsid)
+
+              # derive mon addresses at runtime from the rook-ceph-mon-endpoints
+              # configmap (format: "d=ip:port,h=ip:port,g=ip:port"). Mon ClusterIPs
+              # change when mons are rescheduled, so never hardcode them.
+              MON_ADDR=$(awk -F, '{for(i=1;i<=NF;i++){sub(/^[^=]*=/,"",$i); printf "%s%s",(i>1?"/":""),$i}}' /etc/ceph-mon/data)
+              if [ -z "$MON_ADDR" ]; then
+                echo "ERROR: could not read mon addresses from /etc/ceph-mon/data"
+                exit 1
+              fi
+              echo "Using mon addresses: $MON_ADDR"
+
               mkdir -p /mnt/cephfs
               mount -t ceph "admin@${CEPH_FSID}.ocs-storagecluster-cephfilesystem=/" /mnt/cephfs \
-                -o "mon_addr=172.30.224.204:3300/172.30.170.219:3300/172.30.126.27:3300,secret=${ADMIN_KEY},ms_mode=prefer-crc" 2>/dev/null
+                -o "mon_addr=${MON_ADDR},secret=${ADMIN_KEY},ms_mode=prefer-crc"
 
               if [ ! -d /mnt/cephfs/volumes/csi ]; then
                 echo "ERROR: CephFS mount failed"
@@ -97,6 +108,9 @@ spec:
             - name: ceph-fsid
               mountPath: /etc/ceph-fsid
               readOnly: true
+            - name: mon-endpoints
+              mountPath: /etc/ceph-mon
+              readOnly: true
             resources:
               requests:
                 cpu: "1"
@@ -115,3 +129,9 @@ spec:
               items:
               - key: fsid
                 path: fsid
+          - name: mon-endpoints
+            configMap:
+              name: rook-ceph-mon-endpoints
+              items:
+              - key: data
+                path: data

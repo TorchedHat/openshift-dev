@@ -1,3 +1,11 @@
+# Compute/GPU quota. Uses a PriorityClass scopeSelector so it only counts pods
+# that are NOT backup jobs: backup pods run in the user's namespace (to mount
+# their RWO lvms PVC) but must not compete with the user's GPU dev pod for
+# quota, otherwise the nightly lvms-backup-to-cos job can never create a pod
+# when the dev pod fills the quota.
+# NOTE: storage resources (requests.storage, persistentvolumeclaims) cannot be
+# tracked in a quota that has a PriorityClass scope, so they live in the
+# separate storage-quota below.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -21,7 +29,21 @@ spec:
     requests.memory: 128Gi
     limits.cpu: "64"
     limits.memory: 512Gi
-
-    # Storage
+  scopeSelector:
+    matchExpressions:
+    - scopeName: PriorityClass
+      operator: NotIn
+      values: ["backup-priority"]
+---
+# Storage quota. Applies to all pods (no scopeSelector); backup pods create no
+# PVCs so exempting them here is unnecessary and storage resources are not
+# compatible with a PriorityClass scope anyway.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: storage-quota
+  namespace: <username>
+spec:
+  hard:
     requests.storage: 300Gi
     persistentvolumeclaims: "5"

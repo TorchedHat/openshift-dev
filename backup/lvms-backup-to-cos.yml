@@ -1,3 +1,16 @@
+# Backup pods run inside each user's namespace to mount their RWO lvms PVC.
+# This PriorityClass, combined with the scopeSelector on gpu-quota
+# (see resourcequotas.yml), exempts backup pods from the user's quota so they
+# can be admitted even when the user's GPU dev pod has filled the quota.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: backup-priority
+value: 0
+globalDefault: false
+preemptionPolicy: Never
+description: "Backup jobs; exempted from gpu-quota via scopeSelector. Never preempts user workloads."
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -124,6 +137,7 @@ spec:
                 activeDeadlineSeconds: 7200
                 template:
                   spec:
+                    priorityClassName: backup-priority
                     nodeSelector:
                       node.kubernetes.io/instance-type: gx3d.160x1792.8h200
                     containers:
