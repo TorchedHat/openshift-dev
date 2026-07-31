@@ -119,6 +119,8 @@ spec:
                 fieldPath: status.podIP
           - name: ANTHROPIC_VERTEX_PROJECT_ID
             value: ""
+          - name: CLAUDE_CONFIG_DIR
+            value: /home/devuser/.claude
           volumeMounts:
             - name: pytorch-eco-data
               mountPath: /home/devuser
@@ -128,6 +130,8 @@ spec:
             - name: gcloud-config
               readOnly: true
               mountPath: /home/devuser/.config/gcloud
+            - name: claude-config
+              mountPath: /home/devuser/.claude
             - name: bazelrc
               mountPath: /home/devuser/.bazelrc
               subPath: .bazelrc
@@ -158,6 +162,8 @@ spec:
             secret:
               secretName: <username>-gcloud-config
               defaultMode: 0640
+          - name: claude-config
+            emptyDir: {}
           - name: pytorch-eco-data
             persistentVolumeClaim:
               claimName: pytorch-ibmc-storage-<username>

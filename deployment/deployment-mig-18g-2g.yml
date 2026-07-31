@@ -46,6 +46,8 @@ spec:
         - name: dshm
           emptyDir:
             medium: Memory
+        - name: claude-config
+          emptyDir: {}
       initContainers:
         - name: init-container
           image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
@@ -78,6 +80,8 @@ spec:
           terminationMessagePath: /dev/termination-log
           name: container
           env:
+          - name: CLAUDE_CONFIG_DIR
+            value: /home/devuser/.claude
           - name: MAX_JOBS
             value: "8"
           command:
@@ -103,6 +107,8 @@ spec:
               subPath: .gdbinit
             - name: dshm
               mountPath: /dev/shm
+            - name: claude-config
+              mountPath: /home/devuser/.claude
           terminationMessagePolicy: File
           tty: true
           image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
