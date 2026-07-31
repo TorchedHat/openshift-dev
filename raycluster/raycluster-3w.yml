@@ -121,6 +121,8 @@ spec:
             value: ""
           - name: CLAUDE_CONFIG_DIR
             value: /home/devuser/.claude
+          - name: GCE_METADATA_HOST
+            value: "127.0.0.1:1"
           volumeMounts:
             - name: pytorch-eco-data
               mountPath: /home/devuser

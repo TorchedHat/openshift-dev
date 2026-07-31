@@ -72,6 +72,8 @@ spec:
           env:
           - name: CLAUDE_CONFIG_DIR
             value: /home/devuser/.claude
+          - name: GCE_METADATA_HOST
+            value: "127.0.0.1:1"
           - name: MAX_JOBS
             value: "4"
           command:
