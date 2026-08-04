@@ -168,7 +168,7 @@ spec:
             emptyDir: {}
           - name: pytorch-eco-data
             persistentVolumeClaim:
-              claimName: pytorch-ibmc-storage-<username>
+              claimName: pytorch-py3-10-<username>
           - name: gdbinit
             configMap:
               name: gdbinit
@@ -280,7 +280,7 @@ spec:
         volumes:
           - name: pytorch-eco-data
             persistentVolumeClaim:
-              claimName: pytorch-ibmc-storage-<username>
+              claimName: pytorch-py3-10-<username>
           - name: gdbinit
             configMap:
               name: gdbinit
@@ -392,7 +392,7 @@ spec:
         volumes:
           - name: pytorch-eco-data
             persistentVolumeClaim:
-              claimName: pytorch-ibmc-storage-<username>
+              claimName: pytorch-py3-10-<username>
           - name: gdbinit
             configMap:
               name: gdbinit

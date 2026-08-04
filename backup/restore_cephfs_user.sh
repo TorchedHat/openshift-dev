@@ -3,9 +3,9 @@
 read -p "Enter username to restore: " USERNAME
 
 # resolve the CephFS subvolume path from the user's PVC
-PV_NAME=$(oc get pvc "pytorch-ibmc-storage-$USERNAME" -n "$USERNAME" -o jsonpath='{.spec.volumeName}' 2>/dev/null)
+PV_NAME=$(oc get pvc "pytorch-py3-10-$USERNAME" -n "$USERNAME" -o jsonpath='{.spec.volumeName}' 2>/dev/null)
 if [ -z "$PV_NAME" ]; then
-  echo "ERROR: PVC pytorch-ibmc-storage-$USERNAME not found in namespace $USERNAME"
+  echo "ERROR: PVC pytorch-py3-10-$USERNAME not found in namespace $USERNAME"
   exit 1
 fi
 

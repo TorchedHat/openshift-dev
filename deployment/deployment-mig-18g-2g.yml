@@ -32,7 +32,7 @@ spec:
             defaultMode: 0640
         - name: pytorch-eco-data
           persistentVolumeClaim:
-            claimName: pytorch-ibmc-storage-<username>
+            claimName: pytorch-py3-10-<username>
         - name: bazelrc
           configMap:
             name: bazelrc

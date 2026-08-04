@@ -156,3 +156,56 @@ Monitor and clean up:
 oc logs -f job/restore-<username> -n nfs-server
 oc delete job restore-<username> -n nfs-server
 ```
+
+## PVC Migration (ibmc-storage → py3-10 rename)
+
+The `py3-10` workspace PVC was renamed from `pytorch-ibmc-storage-<username>` to
+`pytorch-py3-10-<username>` for naming consistency with the other version PVCs.
+
+Renaming the manifest does **not** rename the live PVC. Applying the renamed
+manifest creates a brand-new, empty PVC and provisions a fresh volume; the old
+`pytorch-ibmc-storage-<username>` PVC and its data are left untouched but
+orphaned. Existing users must have their data copied to the new PVC, or they
+will see empty storage after redeploying.
+
+New users / fresh namespaces need no migration — the rename is purely cosmetic
+for them. Only the one PVC that changed identity needs migrating; `py3-11`
+through `py3-14` keep their existing cluster names.
+
+The migration scripts create the destination PVC (sized to match the source)
+and run a Job that mounts the old PVC read-only at `/source` and the new PVC at
+`/dest`, copying with `cp -a` (preserves permissions, symlinks, executable
+bits). The old PVC is never modified.
+
+### LVMS (H200 Toronto cluster)
+
+```bash
+./lvms-migrate-user.sh
+```
+
+### CephFS (H100 RDMA cluster)
+
+```bash
+./cephfs-migrate-user.sh
+```
+
+Per-user workflow:
+
+```bash
+# 1. Scale the user's workload to 0 so the source is quiescent.
+#    Required for LVMS RWO; recommended for CephFS to avoid mid-copy changes.
+oc scale deployment/<name> --replicas=0 -n <username>
+
+# 2. Run the migration for the volume type and confirm the prompt.
+./lvms-migrate-user.sh          # or ./cephfs-migrate-user.sh
+
+# 3. Verify the source/dest sizes and file counts match.
+oc logs -f job/lvms-migrate-<username> -n <username>
+
+# 4. Bring the workload back up (the deployment already points at the new name).
+oc scale deployment/<name> --replicas=1 -n <username>
+
+# 5. Once confident the data is intact, reclaim the old space.
+oc delete job lvms-migrate-<username> -n <username>
+oc delete pvc pytorch-ibmc-storage-<username> -n <username>
+```

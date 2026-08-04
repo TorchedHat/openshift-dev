@@ -66,4 +66,4 @@ spec:
       volumes:
       - name: user-data
         persistentVolumeClaim:
-          claimName: pytorch-ibmc-storage-<username>
+          claimName: pytorch-py3-10-<username>

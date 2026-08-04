@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: pytorch-ibmc-storage-<username>
+  name: pytorch-py3-10-<username>
   namespace: <username>
 spec:
   accessModes:

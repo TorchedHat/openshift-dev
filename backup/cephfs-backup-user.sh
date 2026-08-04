@@ -2,7 +2,7 @@
 
 read -p "Enter username to back up: " USERNAME
 
-PVC_NAME="pytorch-ibmc-storage-$USERNAME"
+PVC_NAME="pytorch-py3-10-$USERNAME"
 PV_NAME=$(oc get pvc "$PVC_NAME" -n "$USERNAME" -o jsonpath='{.spec.volumeName}' 2>/dev/null)
 if [ -z "$PV_NAME" ]; then
   echo "ERROR: PVC $PVC_NAME not found in namespace $USERNAME"

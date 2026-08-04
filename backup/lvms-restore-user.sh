@@ -4,7 +4,7 @@
 
 read -p "Enter username to restore: " USERNAME
 
-PVC_NAME="pytorch-ibmc-storage-$USERNAME"
+PVC_NAME="pytorch-py3-10-$USERNAME"
 if ! oc get pvc "$PVC_NAME" -n "$USERNAME" &>/dev/null; then
   echo "Error: PVC $PVC_NAME not found in namespace $USERNAME"
   exit 1
