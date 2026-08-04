@@ -18,8 +18,18 @@ oc create secret generic $NAMESPACE-gcloud-config \
   --namespace=$NAMESPACE \
   --from-file=$GCLOUD_CREDENTIALS
 
-# create deployment for the user
-oc apply -f <(sed "s/<username>/$NAMESPACE/g" deployment/deployment-mig-18g.yml)
+# create mig-18g deployments for all python versions
+for PYVER in 3.10 3.11 3.12 3.13 3.14; do
+  PYSLUG="py${PYVER//./}"
+  PYDASH="py${PYVER//./-}"
+  oc apply -f <(sed -e "s/<username>/$NAMESPACE/g" \
+                     -e "s/<pyslug>/$PYSLUG/g" \
+                     -e "s/<pydash>/$PYDASH/g" \
+                     -e "s/<pyversion>/$PYVER/g" \
+                     deployment/deployment-mig-18g.yml)
+done
+
+# create other deployments
 oc apply -f <(sed "s/<username>/$NAMESPACE/g" deployment/deployment-mig-35g.yml)
 oc apply -f <(sed "s/<username>/$NAMESPACE/g" deployment/deployment.yml)
 oc apply -f <(sed "s/<username>/$NAMESPACE/g" deployment/deployment-rdma.yml)
