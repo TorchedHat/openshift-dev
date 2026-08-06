@@ -1,0 +1,47 @@
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: hostnetwork-anyuid
+  annotations:
+    kubernetes.io/description: >-
+      Clone of the built-in hostnetwork SCC but with runAsUser: RunAsAny so pods
+      may run with an arbitrary fixed UID (e.g. 1000) while using host networking
+      and host ports. Does NOT grant privileged containers. Created for qqaatw's
+      RDMA dev container.
+# Host networking + host ports, like the built-in hostnetwork SCC
+allowHostNetwork: true
+allowHostPorts: true
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostPID: false
+allowPrivilegedContainer: false
+allowPrivilegeEscalation: true
+allowedCapabilities: null
+defaultAddCapabilities: null
+requiredDropCapabilities:
+- KILL
+- MKNOD
+- SETUID
+- SETGID
+readOnlyRootFilesystem: false
+# The one difference from hostnetwork: allow any UID (pod requests runAsUser 1000)
+runAsUser:
+  type: RunAsAny
+fsGroup:
+  type: MustRunAs
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: MustRunAs
+volumes:
+- configMap
+- csi
+- downwardAPI
+- emptyDir
+- ephemeral
+- image
+- persistentVolumeClaim
+- projected
+- secret
+users: []
+groups: []
