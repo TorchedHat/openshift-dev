@@ -1,0 +1,61 @@
+name: Build and Push Runtime to Quay
+
+# Slim RUNTIME images for RayClusters (see .devcontainer/runtime.Dockerfile).
+#
+# The runtime image installs NO python (miniconda + the editable ray/torch trees come
+# from the dev PVC at runtime), so its content does NOT depend on the python version --
+# ONE runtime image backs every py<ver> dev image that shares the same CUDA/Fedora.
+# We therefore build a single image per cuda-version (not one per python version) and
+# tag it without a py prefix: `:runtime` (default 12.9) / `:runtime-cuda<ver>`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.devcontainer/runtime.Dockerfile'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda-version: ['12.9', '13.0']
+        include:
+          - cuda-version: '12.9'
+            fedora-version: '41'
+            cudnn-version: '9.6.0.74'
+            cudnn-cuda-suffix: 'cuda12'
+          - cuda-version: '13.0'
+            fedora-version: '42'
+            cudnn-version: '9.15.0.58'
+            cudnn-cuda-suffix: 'cuda13'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo docker image prune -af
+
+      - name: Login to Quay
+        uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: .devcontainer/runtime.Dockerfile
+          push: true
+          build-args: |
+            FEDORA_VERSION=${{ matrix.fedora-version }}
+            CUDA_VERSION=${{ matrix.cuda-version }}
+            CUDNN_VERSION=${{ matrix.cudnn-version }}
+            CUDNN_CUDA_SUFFIX=${{ matrix.cudnn-cuda-suffix }}
+          tags: |
+            quay.io/rh-ee-sampark/devcontainers:runtime${{ matrix.cuda-version != '12.9' && format('-cuda{0}', matrix.cuda-version) || '' }}

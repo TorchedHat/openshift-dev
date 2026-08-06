@@ -1,0 +1,44 @@
+name: PR Build Check (Runtime)
+
+# One runtime image per cuda-version (python-agnostic -- see build-push-runtime.yml).
+
+on:
+  pull_request:
+    paths:
+      - '.devcontainer/runtime.Dockerfile'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda-version: ['12.9', '13.0']
+        include:
+          - cuda-version: '12.9'
+            fedora-version: '41'
+            cudnn-version: '9.6.0.74'
+            cudnn-cuda-suffix: 'cuda12'
+          - cuda-version: '13.0'
+            fedora-version: '42'
+            cudnn-version: '9.15.0.58'
+            cudnn-cuda-suffix: 'cuda13'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo docker image prune -af
+
+      - name: Build runtime image (CUDA ${{ matrix.cuda-version }})
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: .devcontainer/runtime.Dockerfile
+          push: false
+          build-args: |
+            FEDORA_VERSION=${{ matrix.fedora-version }}
+            CUDA_VERSION=${{ matrix.cuda-version }}
+            CUDNN_VERSION=${{ matrix.cudnn-version }}
+            CUDNN_CUDA_SUFFIX=${{ matrix.cudnn-cuda-suffix }}
