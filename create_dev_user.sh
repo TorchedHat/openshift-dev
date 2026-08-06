@@ -34,14 +34,24 @@ while true; do
   echo ""
 done
 
-# create git-ssh-key secret
+# create git-ssh-key secret; if one already exists, delete it first so we upload
+# the latest key
+if oc get secret $NAMESPACE-git-ssh-key --namespace=$NAMESPACE >/dev/null 2>&1; then
+  echo "Secret $NAMESPACE-git-ssh-key already exists, deleting it to upload the latest key."
+  oc delete secret $NAMESPACE-git-ssh-key --namespace=$NAMESPACE
+fi
 oc create secret generic $NAMESPACE-git-ssh-key \
   --namespace=$NAMESPACE \
   --from-file=ssh-privatekey=$SSH_KEY_PATH \
   --from-file=ssh-publickey=${SSH_KEY_PATH}.pub \
   --from-file=known_hosts=<(ssh-keyscan github.com 2>/dev/null)
 
-# create gcloud authentication secret
+# create gcloud authentication secret; if one already exists, delete it first so
+# we upload the latest credentials
+if oc get secret $NAMESPACE-gcloud-config --namespace=$NAMESPACE >/dev/null 2>&1; then
+  echo "Secret $NAMESPACE-gcloud-config already exists, deleting it to upload the latest credentials."
+  oc delete secret $NAMESPACE-gcloud-config --namespace=$NAMESPACE
+fi
 oc create secret generic $NAMESPACE-gcloud-config \
   --namespace=$NAMESPACE \
   --from-file=$GCLOUD_CREDENTIALS
