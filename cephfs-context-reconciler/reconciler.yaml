@@ -1,0 +1,160 @@
+# CephFS PV SELinux-context reconciler
+#
+# Problem: RWX CephFS PVs (ocs-storagecluster-cephfs) are NOT context-mounted
+# (cluster feature gate `SELinuxMount` is disabled + RWX access mode), so CRI-O
+# recursively SELinux-relabels the whole volume into every container that mounts
+# it. On the large populated dev PVCs this adds ~3.5 min PER CONTAINER at start.
+#
+# Fix: mount the volume with a fixed `context=` so no per-container relabel walk
+# happens. The correct label is the *owning namespace's* MCS level
+# (openshift.io/sa.scc.mcs). This CronJob stamps `context="...:<ns mcs>"` onto
+# every RWX CephFS PV that is missing it — covering existing AND future PVCs —
+# using each PV's own namespace level (never a hardcoded one).
+#
+# Removable: `oc delete -f reconciler.yaml` (already-applied mountOptions stay on
+# the PVs; they only re-apply on next volume re-stage / pod recreate).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pv-context-reconciler
+  labels:
+    # cli image + the pod securityContext below comply with restricted-v2
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pv-context-reconciler
+  namespace: pv-context-reconciler
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pv-context-reconciler
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pv-context-reconciler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pv-context-reconciler
+subjects:
+  - kind: ServiceAccount
+    name: pv-context-reconciler
+    namespace: pv-context-reconciler
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pv-context-reconciler
+  namespace: pv-context-reconciler
+data:
+  reconcile.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    CTX_TYPE="system_u:object_r:container_file_t"
+    DRIVER="openshift-storage.cephfs.csi.ceph.com"
+    DRY_RUN="${DRY_RUN:-false}"
+
+    echo "[reconcile] start $(date -u +%FT%TZ) driver=$DRIVER dry_run=$DRY_RUN"
+
+    # name|namespace|accessModes|mountOptions for every CephFS PV
+    mapfile -t rows < <(oc get pv -o jsonpath="{range .items[?(@.spec.csi.driver==\"$DRIVER\")]}{.metadata.name}|{.spec.claimRef.namespace}|{.spec.accessModes}|{.spec.mountOptions}{\"\n\"}{end}")
+
+    patched=0; skipped=0; errors=0
+    for row in "${rows[@]}"; do
+      [ -z "$row" ] && continue
+      pv="${row%%|*}";       rest="${row#*|}"
+      ns="${rest%%|*}";      rest="${rest#*|}"
+      modes="${rest%%|*}";   curmo="${rest#*|}"
+
+      # Only RWX volumes hit the per-container relabel walk (RWO already gets
+      # context-mounted via the GA SELinuxMountReadWriteOncePod gate).
+      case "$modes" in *ReadWriteMany*) ;; *) skipped=$((skipped+1)); continue;; esac
+      if [ -z "$ns" ]; then echo "[skip] $pv: no claimRef namespace"; skipped=$((skipped+1)); continue; fi
+
+      mcs="$(oc get ns "$ns" -o jsonpath='{.metadata.annotations.openshift\.io/sa\.scc\.mcs}' 2>/dev/null || true)"
+      if [ -z "$mcs" ]; then echo "[warn] $pv: ns=$ns has no MCS annotation; skipping"; skipped=$((skipped+1)); continue; fi
+
+      want="context=\"${CTX_TYPE}:${mcs}\""
+      # Per-element compare: {@} prints each mount option raw (no brackets / no
+      # backslash-escaping), so grep -xF matches the desired option exactly.
+      # (The concatenated $curmo above renders escaped and won't match cleanly.)
+      if oc get pv "$pv" -o jsonpath='{range .spec.mountOptions[*]}{@}{"\n"}{end}' 2>/dev/null | grep -qxF -- "$want"; then
+        skipped=$((skipped+1)); continue
+      fi
+
+      echo "[patch] $pv ns=$ns -> $want"
+      if [ "$DRY_RUN" = "true" ]; then patched=$((patched+1)); continue; fi
+      # NOTE: sets mountOptions to exactly the context entry. These dev PVs carry
+      # no other mount options; revisit if that ever changes.
+      printf '{"spec":{"mountOptions":["context=\\"%s:%s\\""]}}' "$CTX_TYPE" "$mcs" > /tmp/patch.json
+      if oc patch pv "$pv" --type merge --patch-file /tmp/patch.json >/dev/null; then
+        patched=$((patched+1))
+      else
+        echo "[error] failed to patch $pv"; errors=$((errors+1))
+      fi
+    done
+
+    echo "[reconcile] done patched=$patched skipped=$skipped errors=$errors"
+    [ "$errors" -eq 0 ]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pv-context-reconciler
+  namespace: pv-context-reconciler
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 200
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: pv-context-reconciler
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reconcile
+              image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+              command: ["/bin/bash", "/scripts/reconcile.sh"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: 64Mi
+                limits:
+                  cpu: "200m"
+                  memory: 128Mi
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+          volumes:
+            - name: script
+              configMap:
+                name: pv-context-reconciler
+                defaultMode: 0755
