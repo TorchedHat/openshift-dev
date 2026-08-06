@@ -87,6 +87,9 @@ RUN dnf upgrade --refresh -y && \
 # CUDA RUNTIME libraries only (NOT the toolkit) via NVIDIA's network repo -- a few
 # hundred MB of .so instead of the ~4-5GB local toolkit installer. These are exactly the
 # libs the prebuilt editable torch links against.
+# NOTE: NCCL is NOT installed here -- it isn't in NVIDIA's Fedora CUDA repo (that repo
+# only ships nccl on Debian/Ubuntu). torch bundles its own via the nvidia-nccl-cu12
+# wheel, which lives in the PVC's site-packages and is found at runtime.
 # ---------------------------------------------------------------------------
 RUN CUDA_MAJMIN="$(echo "${CUDA_VERSION}" | tr . -)" && \
     CUDA_DIR="cuda-${CUDA_VERSION}" && \
@@ -102,8 +105,7 @@ RUN CUDA_MAJMIN="$(echo "${CUDA_VERSION}" | tr . -)" && \
         libcusparse-${CUDA_MAJMIN} \
         libnpp-${CUDA_MAJMIN} \
         libnvjitlink-${CUDA_MAJMIN} \
-        libcufile-${CUDA_MAJMIN} \
-        libnccl && \
+        libcufile-${CUDA_MAJMIN} && \
     dnf clean all && \
     echo /usr/local/${CUDA_DIR}/lib64 > /etc/ld.so.conf.d/cuda-runtime.conf
 
