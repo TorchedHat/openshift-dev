@@ -6,8 +6,9 @@ metadata:
     kubernetes.io/description: >-
       Clone of the built-in hostnetwork SCC but with runAsUser: RunAsAny so pods
       may run with an arbitrary fixed UID (e.g. 1000) while using host networking
-      and host ports. Does NOT grant privileged containers. Created for qqaatw's
-      RDMA dev container.
+      and host ports. Does NOT grant privileged containers. SETUID/SETGID are kept
+      (not dropped) so setuid-root binaries such as sudo work for the non-root UID.
+      Created for qqaatw's RDMA dev container.
 # Host networking + host ports, like the built-in hostnetwork SCC
 allowHostNetwork: true
 allowHostPorts: true
@@ -16,13 +17,15 @@ allowHostIPC: false
 allowHostPID: false
 allowPrivilegedContainer: false
 allowPrivilegeEscalation: true
-allowedCapabilities: null
+# Permit SETUID/SETGID so setuid-root binaries (e.g. sudo) can switch users
+allowedCapabilities:
+- SETUID
+- SETGID
 defaultAddCapabilities: null
+# Keep the standard hostnetwork drops, but do NOT drop SETUID/SETGID (breaks sudo)
 requiredDropCapabilities:
 - KILL
 - MKNOD
-- SETUID
-- SETGID
 readOnlyRootFilesystem: false
 # The one difference from hostnetwork: allow any UID (pod requests runAsUser 1000)
 runAsUser:
