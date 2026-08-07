@@ -1,0 +1,58 @@
+# NVSHMEM cross-node test pod — NODE 1.
+# Pinned to worker-3-v72kj (mlx5_0 fabric IP 10.7.0.6). It rendezvous-dials
+# node 0's fabric IP (10.7.0.4). Identical to node0 except name + nodeName.
+# See README.md.
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: nvshmem-test-node1
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nvshmem-test-node1
+  template:
+    metadata:
+      labels:
+        app: nvshmem-test-node1
+    spec:
+      nodeName: pytorch-openshift-tjqvv-worker-3-v72kj
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: container
+          image: 'quay.io/rh-ee-allin/devcontainer-cuda:py3.12'
+          command: ["/bin/bash", "-c", "sleep infinity"]
+          stdin: true
+          tty: true
+          resources:
+            requests:
+              cpu: '4'
+              memory: 64Gi
+              nvidia.com/gpu: '2'
+              rdma/rdma_shared_device_a: '1'
+            limits:
+              cpu: '16'
+              memory: 128Gi
+              nvidia.com/gpu: '2'
+              rdma/rdma_shared_device_a: '1'
+          env:
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            - name: NCCL_NET_GDR_LEVEL
+              value: "5"
+          volumeMounts:
+            - mountPath: /dev/shm
+              name: dshm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 0
+        capabilities:
+          add: ["IPC_LOCK"]
+      imagePullSecrets:
+        - name: allin-image-registry
