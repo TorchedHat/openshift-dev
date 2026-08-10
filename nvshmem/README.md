@@ -51,8 +51,7 @@ reasoning and the failure mode each one avoids.
   `symmetric_memory` NVSHMEM backend and the NVSHMEM runtime** (`libnvshmem*` on
   `LD_LIBRARY_PATH`). The reference yamls only reserve the hardware; they do not
   install PyTorch/NVSHMEM. **NVSHMEM must be baked into the container image**
-  (e.g. `pip install nvidia-nvshmem-cu12` in your Dockerfile, or built from the
-  NVSHMEM source), since it is not shipped in the base CUDA image. Verify inside
+  (e.g. built from the NVSHMEM source), since it is not shipped in the base CUDA image. Verify inside
   a pod with:
 
   ```bash
