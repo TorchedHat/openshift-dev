@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.devcontainer/Dockerfile'
+      - '.devcontainer/nvshmem.Dockerfile'
 
 jobs:
   build:
