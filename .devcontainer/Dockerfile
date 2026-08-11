@@ -6,6 +6,7 @@ ARG FEDORA_VERSION=41
 ARG CUDA_VERSION=12.9
 ARG CUDNN_VERSION=9.6.0.74
 ARG CUDNN_CUDA_SUFFIX=cuda12
+ARG NVSHMEM_VERSION=3.7.2
 ARG GCC_SUFFIX=-13
 
 #Base image
@@ -18,6 +19,7 @@ ARG FEDORA_VERSION
 ARG CUDA_VERSION
 ARG CUDNN_VERSION
 ARG CUDNN_CUDA_SUFFIX
+ARG NVSHMEM_VERSION
 ARG GCC_SUFFIX
 
 # Run as root for system-level installs
@@ -81,7 +83,7 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/y
          '*/lib/clang/12*' '*/include/clang*' \
     && ln -sf /usr/local/bin/clang-12 /usr/local/bin/clang-12.0
 
-# Layer 2: CUDA toolkit + cuDNN
+# Layer 2: CUDA toolkit + cuDNN + NVSHMEM
 RUN CUDA_PKG_VERSION=$(echo ${CUDA_VERSION} | tr '.' '-') \
     && dnf config-manager addrepo --from-repofile=https://developer.download.nvidia.com/compute/cuda/repos/fedora${FEDORA_VERSION}/x86_64/cuda-fedora${FEDORA_VERSION}.repo \
     && dnf -y install cuda-toolkit-${CUDA_PKG_VERSION} \
@@ -93,7 +95,12 @@ RUN CUDA_PKG_VERSION=$(echo ${CUDA_VERSION} | tr '.' '-') \
     && mv ./cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive/include/* /usr/local/cuda/include \
     && mv ./cudnn-linux-x86_64-${CUDNN_VERSION}_${CUDNN_CUDA_SUFFIX}-archive/lib/* /usr/local/cuda/lib64 \
     && cd / && rm -rf /tmp/cudnn \
-    && chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn*
+    && chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn* \
+    && mkdir /tmp/nvshmem && cd /tmp/nvshmem \
+    && wget https://developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/libnvshmem-linux-x86_64-${NVSHMEM_VERSION}_${CUDNN_CUDA_SUFFIX}-archive.tar.xz \
+    && tar xav libnvshmem-linux-x86_64-${NVSHMEM_VERSION}_${CUDNN_CUDA_SUFFIX}-archive.tar.xz \
+    && mv ./libnvshmem-linux-x86_64-${NVSHMEM_VERSION}_${CUDNN_CUDA_SUFFIX}-archive /usr/local/nvshmem \
+    && cd / && rm -rf /tmp/nvshmem 
 
 # Layer 3: Conda + Python
 ARG PY_VER
