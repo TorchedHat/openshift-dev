@@ -1,0 +1,119 @@
+# DRA ResourceClaimTemplates for SYMMETRIC cross-node GPU placement (1 / 2 / 4 GPU per pod).
+#
+# WHY BUS-PINNING = SYMMETRY
+# --------------------------
+# The pytorch-openshift fabric is rail-optimized: mlx5_i is an isolated rail that only routes to
+# mlx5_i, and GPUDirect works only when the GPU is PIX to that NIC. A correct cross-node NVSHMEM
+# collective therefore needs BOTH ranks with the same local_rank to sit on the SAME physical GPU
+# board position -> same PIX rail. See memory: distributed-tests-nonhostnet-nvshmem.
+#
+# The NVIDIA DRA driver exposes the standardized `resource.kubernetes.io/pciBusID`, and the PCI
+# bus IDs are IDENTICAL across all GPU nodes (same HGX topology). So if BOTH node pods reference
+# the SAME template, each is allocated the GPU(s) at the SAME bus ID(s) -> symmetric board
+# position(s) by construction. If a pinned GPU is already taken on a node, the pod stays Pending
+# (fail-to-schedule) instead of silently landing on an asymmetric GPU. railguard still confirms +
+# pins the rail at runtime as a backstop.
+#
+# For >1 GPU per pod, we pin a SET of buses (one request per GPU). "Give me any N GPUs" would let
+# node-0 grab {a4,ae} while node-1 grabs {b8,c2} -> asymmetric -> silent NVSHMEM corruption. One
+# pinned request per GPU makes both pods take the identical set. A container that references the
+# claim with no `request:` selector receives the devices from ALL requests in the claim.
+#
+# BUS-ID -> board map (identical on s4fxf/v72kj/h72vf):
+#   a4:00.0 ae:00.0 b8:00.0 c2:00.0 cc:00.0 d6:00.0 e0:00.0 ea:00.0
+# The bus SETS below are sane DEFAULTS. dra-preflight-launch.py RE-STAMPS these selectors to buses
+# that are mutually free on >=2 nodes before each launch (fallthrough on contention); apply these
+# static files directly only when you want fixed buses / no pre-flight.
+#
+# NOTE: ResourceClaimTemplate.spec is IMMUTABLE. To change a template's pinned buses you must
+# delete + recreate it (the pre-flight picker does this automatically). `oc apply` over an
+# existing template with different buses fails with "field is immutable".
+---
+# 1 GPU/pod  -> torch-cross-node-2gpu*  (both pods pin the SAME single bus)
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: symmetric-gpu-run
+  namespace: skpark-rh
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu0
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1
+            selectors:
+              - cel:
+                  expression: device.attributes["resource.kubernetes.io"].pciBusID == "0000:a4:00.0"
+---
+# 2 GPU/pod  -> torch-cross-node-4gpu   (both pods pin the SAME 2 buses)
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: symmetric-gpu-run-2
+  namespace: skpark-rh
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu0
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1
+            selectors:
+              - cel:
+                  expression: device.attributes["resource.kubernetes.io"].pciBusID == "0000:a4:00.0"
+        - name: gpu1
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1
+            selectors:
+              - cel:
+                  expression: device.attributes["resource.kubernetes.io"].pciBusID == "0000:ae:00.0"
+---
+# 4 GPU/pod  -> torch-cross-node-8gpu   (both pods pin the SAME 4 buses)
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: symmetric-gpu-run-4
+  namespace: skpark-rh
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu0
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1
+            selectors:
+              - cel:
+                  expression: device.attributes["resource.kubernetes.io"].pciBusID == "0000:a4:00.0"
+        - name: gpu1
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1
+            selectors:
+              - cel:
+                  expression: device.attributes["resource.kubernetes.io"].pciBusID == "0000:ae:00.0"
+        - name: gpu2
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1
+            selectors:
+              - cel:
+                  expression: device.attributes["resource.kubernetes.io"].pciBusID == "0000:b8:00.0"
+        - name: gpu3
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1
+            selectors:
+              - cel:
+                  expression: device.attributes["resource.kubernetes.io"].pciBusID == "0000:c2:00.0"

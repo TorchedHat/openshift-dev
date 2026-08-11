@@ -1,6 +1,8 @@
-# Example TrainJob: run the cross-node NVSHMEM test on the 4-GPU bucket (2 nodes x 2).
+# Example TrainJob: run the cross-node NVSHMEM test (defaults to the 2-GPU bucket;
+# swap runtimeRef.name to change scale). For contention-safe symmetric GPU placement,
+# launch via dra-preflight-launch.py instead of applying this directly.
 #
-# The runtime supplies the whole pod (hostNetwork, RDMA, SCC, rendezvous wrapper).
+# The runtime supplies the whole pod (RDMA, DRA GPU claim, SCC, rendezvous wrapper).
 # This TrainJob only:
 #   * picks a bucket via runtimeRef.name
 #   * supplies the workload script via spec.trainer.args (the wrapper runs
@@ -18,7 +20,7 @@ metadata:
   namespace: skpark-rh
 spec:
   runtimeRef:
-    name: torch-cross-node-4gpu        # <-- swap to -2gpu / -8gpu to change scale
+    name: torch-cross-node-2gpu        # <-- swap to -4gpu / -8gpu to change scale
   trainer:
     # image supplies the /usr userspace + wrapper tools (bash/curl/iproute2) and a
     # CUDA/Fedora userspace matching the PVC's torch build; python+torch come from the

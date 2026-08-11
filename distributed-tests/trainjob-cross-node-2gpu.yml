@@ -1,0 +1,33 @@
+# 2-GPU (2 nodes x 1) cross-node NVSHMEM TrainJob -> torch-cross-node-2gpu runtime.
+# The baseline symmetric-placement test (non-hostNetwork + DRA). Launch via the pre-flight picker
+# so the 1-bus symmetric template is stamped first (this is the picker's default):
+#   ./dra-preflight-launch.py
+# which is equivalent to:
+#   ./dra-preflight-launch.py --gpus 1 --rct-name symmetric-gpu-run \
+#       --runtime clustertrainingruntimes.yml --trainjob trainjob-cross-node-2gpu.yml \
+#       --trainjob-name symmem-2gpu
+# Both pods pin the SAME single bus (symmetric-gpu-run) -> symmetric board position.
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: symmem-2gpu
+  namespace: skpark-rh
+spec:
+  runtimeRef:
+    name: torch-cross-node-2gpu
+  trainer:
+    image: quay.io/rh-ee-sampark/devcontainers:py3.10
+    args: ["/workspace/test_symmem_internode.py"]
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        volumes:
+          - name: test-script
+            configMap:
+              name: cross-node-test
+        containers:
+          - name: node
+            volumeMounts:
+              - name: test-script
+                mountPath: /workspace
