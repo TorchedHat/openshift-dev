@@ -17,10 +17,13 @@ allowHostIPC: false
 allowHostPID: false
 allowPrivilegedContainer: false
 allowPrivilegeEscalation: true
-# Permit SETUID/SETGID so setuid-root binaries (e.g. sudo) can switch users
+# Permit SETUID/SETGID so setuid-root binaries (e.g. sudo) can switch users, and
+# IPC_LOCK so RDMA/NVSHMEM pods can pin (mlock) memory for ibv_reg_mr. Additive: pods
+# that don't request these caps are unaffected.
 allowedCapabilities:
 - SETUID
 - SETGID
+- IPC_LOCK
 defaultAddCapabilities: null
 # Keep the standard hostnetwork drops, but do NOT drop SETUID/SETGID (breaks sudo)
 requiredDropCapabilities:
