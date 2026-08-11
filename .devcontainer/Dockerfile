@@ -98,7 +98,7 @@ RUN CUDA_PKG_VERSION=$(echo ${CUDA_VERSION} | tr '.' '-') \
     && chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn* \
     && mkdir /tmp/nvshmem && cd /tmp/nvshmem \
     && wget https://developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/libnvshmem-linux-x86_64-${NVSHMEM_VERSION}_${CUDNN_CUDA_SUFFIX}-archive.tar.xz \
-    && tar xav libnvshmem-linux-x86_64-${NVSHMEM_VERSION}_${CUDNN_CUDA_SUFFIX}-archive.tar.xz \
+    && tar xvf libnvshmem-linux-x86_64-${NVSHMEM_VERSION}_${CUDNN_CUDA_SUFFIX}-archive.tar.xz \
     && mv ./libnvshmem-linux-x86_64-${NVSHMEM_VERSION}_${CUDNN_CUDA_SUFFIX}-archive /usr/local/nvshmem \
     && cd / && rm -rf /tmp/nvshmem 
 
@@ -178,8 +178,10 @@ ENV CLAUDE_CODE_USE_VERTEX=1 \
     ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude \
     USER=devuser \
     NVCC_CCBIN=g++${GCC_SUFFIX} \
-    PATH="/home/devuser/.local/bin:/home/devuser/.claude/bin:/usr/local/cuda-${CUDA_VERSION}/bin:${PATH}" \
+    PATH="/home/devuser/.local/bin:/home/devuser/.claude/bin:/usr/local/nvshmem/bin:/usr/local/cuda-${CUDA_VERSION}/bin:${PATH}" \
     CUDA_HOME=/usr/local/cuda-${CUDA_VERSION} \
+    NVSHMEM_HOME=/usr/local/nvshmem \
+    LD_LIBRARY_PATH=/usr/local/nvshmem/lib:/usr/local/cuda-${CUDA_VERSION}/lib64 \
     CC=gcc${GCC_SUFFIX} \
     CXX=g++${GCC_SUFFIX} \
     MAX_JOBS=25 \

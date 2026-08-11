@@ -37,6 +37,7 @@ ARG FEDORA_VERSION=41
 ARG CUDA_VERSION=12.9
 ARG CUDNN_VERSION=9.6.0.74
 ARG CUDNN_CUDA_SUFFIX=cuda12
+ARG NVSHMEM_VERSION=3.7.2
 
 FROM quay.io/foundata/fedora${FEDORA_VERSION}-itt:latest
 
@@ -44,6 +45,7 @@ ARG FEDORA_VERSION
 ARG CUDA_VERSION
 ARG CUDNN_VERSION
 ARG CUDNN_CUDA_SUFFIX
+ARG NVSHMEM_VERSION
 
 USER root
 
@@ -120,6 +122,19 @@ RUN CUDA_DIR="cuda-${CUDA_VERSION}" && \
     cp -a ${ARCHIVE}/lib/*.so* /usr/local/${CUDA_DIR}/lib64/ && \
     cd / && rm -rf /tmp/cudnn && ldconfig
 
+# NVSHMEM RUNTIME libs (host .so + bootstrap/transport plugins). The device lib is static
+# (linked into libtorch at build time); at runtime only the .so are needed so `import
+# torch` can dlopen NVSHMEM. Installed to /usr/local/nvshmem to mirror the builder image's
+# NVSHMEM_HOME. Reuses CUDNN_CUDA_SUFFIX (cuda12/cuda13) -- NVSHMEM ships the same variants.
+RUN ARCHIVE="libnvshmem-linux-x86_64-${NVSHMEM_VERSION}_${CUDNN_CUDA_SUFFIX}-archive" && \
+    mkdir /tmp/nvshmem && cd /tmp/nvshmem && \
+    wget -q https://developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/${ARCHIVE}.tar.xz && \
+    tar xf ${ARCHIVE}.tar.xz && \
+    mkdir -p /usr/local/nvshmem/lib && \
+    cp -a ${ARCHIVE}/lib/*.so* /usr/local/nvshmem/lib/ && \
+    cd / && rm -rf /tmp/nvshmem && \
+    echo /usr/local/nvshmem/lib > /etc/ld.so.conf.d/nvshmem.conf && ldconfig
+
 # NFS/CephFS files may be owned by a different UID than the container user.
 RUN git config --system --add safe.directory '*'
 
@@ -137,7 +152,8 @@ ENV HOME=/home/devuser \
     ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-ai-eng-claude \
     USER=devuser \
     CUDA_HOME=/usr/local/cuda-${CUDA_VERSION} \
-    LD_LIBRARY_PATH=/usr/local/cuda-${CUDA_VERSION}/lib64 \
+    NVSHMEM_HOME=/usr/local/nvshmem \
+    LD_LIBRARY_PATH=/usr/local/nvshmem/lib:/usr/local/cuda-${CUDA_VERSION}/lib64 \
     RAY_INSTALL_CPP=0
 
 USER 1000
