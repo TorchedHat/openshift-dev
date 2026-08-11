@@ -1,3 +1,23 @@
+# DRA GPU allocation. The classic nvidia.com/gpu device plugin is DISABLED cluster-wide, so
+# GPUs are requested via DRA ResourceClaims. This "any GPU" template (1 GPU, no bus pinning) is
+# created in the same namespace; the pod references it below (spec.template.spec.resourceClaims)
+# and the container consumes it (resources.claims). Applying this file creates the template and
+# the Deployment together; idempotent if gpu-1 already exists in this namespace.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: gpu-1
+  namespace: <username>
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1
+---
 kind: Deployment
 apiVersion: apps/v1
 metadata:
@@ -13,6 +33,10 @@ spec:
       labels:
         app: <username>-rdma-dev-py312
     spec:
+      # DRA: one GPU from the gpu-1 ResourceClaimTemplate (replaces classic nvidia.com/gpu).
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: gpu-1
       volumes:
         - name: ssh-key
           secret:
@@ -70,13 +94,14 @@ spec:
             limits:
               cpu: '16'
               memory: 128Gi
-              nvidia.com/gpu: '1'
               rdma/rdma_shared_device_a: '1'
             requests:
               cpu: '4'
               memory: 32Gi
-              nvidia.com/gpu: '1'
               rdma/rdma_shared_device_a: '1'
+            # GPU comes from the DRA claim, not nvidia.com/gpu.
+            claims:
+              - name: gpu
           stdin: true
           terminationMessagePath: /dev/termination-log
           name: container

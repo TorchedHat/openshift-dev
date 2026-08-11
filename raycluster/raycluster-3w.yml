@@ -1,4 +1,26 @@
-apiVersion: ray.io/v1alpha1
+# DRA GPU allocation. The classic nvidia.com/gpu device plugin is DISABLED cluster-wide, so
+# GPUs are requested via DRA ResourceClaims. This "any GPU" template (1 GPU, no bus pinning) is
+# created in the same namespace; the gpu-group worker pod references it below
+# (spec.template.spec.resourceClaims) and the container consumes it (resources.claims). KubeRay
+# no longer sees nvidia.com/gpu, so the group sets rayStartParams.num-gpus="1" to advertise the
+# DRA-injected GPU to Ray. Applying this file creates the template and the RayCluster together;
+# idempotent if gpu-1 already exists in this namespace.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: gpu-1
+  namespace: <username>
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1
+---
+apiVersion: ray.io/v1
 kind: RayCluster
 metadata:
   name: raycluster-3w
@@ -295,9 +317,16 @@ spec:
     replicas: 3
     minReplicas: 3
     maxReplicas: 10
-    rayStartParams: {}
+    # GPUs come from DRA (nvidia.com/gpu is gone), so KubeRay can't infer num-gpus from the
+    # container limit — advertise the DRA-injected GPU to Ray explicitly.
+    rayStartParams:
+      num-gpus: "1"
     template:
       spec:
+        # DRA: one GPU from the gpu-1 ResourceClaimTemplate (replaces classic nvidia.com/gpu).
+        resourceClaims:
+          - name: gpu
+            resourceClaimTemplateName: gpu-1
         securityContext:
           runAsUser: 1000
           runAsGroup: 0
@@ -331,13 +360,14 @@ spec:
             limits:
               cpu: 8
               memory: 50Gi
-              nvidia.com/gpu: "1"
               rdma/rdma_shared_device_a: "1"
             requests:
               cpu: 8
               memory: 50Gi
-              nvidia.com/gpu: "1"
               rdma/rdma_shared_device_a: "1"
+            # GPU comes from the DRA claim, not nvidia.com/gpu.
+            claims:
+              - name: gpu
           volumeMounts:
             - name: pytorch-eco-data
               mountPath: /home/devuser
