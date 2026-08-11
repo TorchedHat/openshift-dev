@@ -1,0 +1,58 @@
+# RBAC + rendezvous ConfigMap for the torch-cross-node orchestrator.
+#
+# The runtime pods use the `torch-cross-node` ServiceAccount. Rank-0 PATCHes its
+# fabric IP into the `torch-cross-node-rendezvous` ConfigMap; the other pods GET it.
+# That is the only API access needed: get/patch on that one ConfigMap.
+#
+# SCC: the runtime runs hostNetwork + IPC_LOCK + a fixed non-root UID, which no
+# built-in SCC allows together. Bind the custom `hostnetwork-anyuid` SCC to this SA:
+#   oc adm policy add-scc-to-user hostnetwork-anyuid -z torch-cross-node -n skpark-rh
+# (same pattern the ../nvshmem test pods use; see memory: qqaatw-hostnetwork-scc.)
+#
+# The entrypoint script is delivered as a ConfigMap created from the .sh file:
+#   oc create configmap torch-cross-node-entrypoint \
+#     --from-file=entrypoint.sh=rendezvous-entrypoint.sh -n skpark-rh
+#
+# NAMESPACE is skpark-rh (fixed): the runtimes mount the dev PVC
+# pytorch-py3-10-skpark-rh, and a PVC is only mountable from its own namespace.
+# Apply this file (SA/CM/Role/RoleBinding) in skpark-rh.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: torch-cross-node
+  namespace: skpark-rh
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: torch-cross-node-rendezvous
+  namespace: skpark-rh
+data:
+  run: ""
+  master_addr: ""
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: torch-cross-node-rendezvous
+  namespace: skpark-rh
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["torch-cross-node-rendezvous"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: torch-cross-node-rendezvous
+  namespace: skpark-rh
+subjects:
+  - kind: ServiceAccount
+    name: torch-cross-node
+    namespace: skpark-rh
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: torch-cross-node-rendezvous

@@ -1,0 +1,231 @@
+# torch-cross-node orchestrator: three PURELY CROSS-NODE runtimes, bucketed by GPU count.
+# All are numNodes: 2 (RDMA fabric internode). They differ ONLY in numProcPerNode and
+# the per-pod GPU/rdma request. Submit a job by referencing one from a TrainJob:
+#   spec.runtimeRef.name: torch-cross-node-4gpu
+#
+#   Runtime                  layout        total GPUs   grabs
+#   torch-cross-node-2gpu    2 nodes x 1        2        1 GPU on each of 2 nodes
+#   torch-cross-node-4gpu    2 nodes x 2        4        2 GPU on each of 2 nodes
+#   torch-cross-node-8gpu    2 nodes x 4        8        4 GPU on each of 2 nodes
+#
+# Cluster capacity is 3 GPU workers x 8 H100 = 24 GPUs; a job holds only its bucket's
+# GPUs, leaving the rest schedulable. No gang scheduler is installed, so under GPU
+# contention a 2-node job could get one pod scheduled and one Pending — fine while the
+# GPU nodes are idle. To make it all-or-nothing later, install Coscheduling or Volcano
+# and add spec.podGroupPolicy. See README.md.
+#
+# NAMESPACE: these run in skpark-rh, because they mount the populated dev PVC
+# (pytorch-py3-10-skpark-rh) and a PVC is only mountable from its own namespace.
+#
+# Prereqs (in skpark-rh): apply rbac.yml, create the entrypoint ConfigMap from
+# rendezvous-entrypoint.sh, and bind the hostnetwork-anyuid SCC to the torch-cross-node SA.
+#
+# TORCH / PYTHON come from the dev PVC (its miniconda + editable torch, which MUST be
+# built with the NVSHMEM symmetric_memory backend), mounted at /home/devuser and shadowing
+# the image. So the IMAGE only needs to supply the /usr-level userspace + tools the wrapper
+# uses (bash, curl, iproute2) and a CUDA/Fedora userspace matching the PVC's torch build.
+#
+# IMAGE SELECTION per job via `spec.trainer.image` therefore selects the CUDA/Fedora
+# userspace variant — NOT the python version, which is fixed by the PVC. Pulled with
+# rh-ee-sampark-dev-bot-pull-secret (must exist in skpark-rh).
+---
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: ClusterTrainingRuntime
+metadata:
+  name: torch-cross-node-2gpu
+  labels:
+    trainer.kubeflow.org/framework: torch
+spec:
+  mlPolicy:
+    numNodes: 2
+    torch:
+      numProcPerNode: 1
+  template:
+    spec:
+      replicatedJobs:
+        - name: node
+          template:
+            spec:
+              backoffLimit: 0
+              template:
+                metadata:
+                  labels:
+                    app: torch-cross-node
+                spec:
+                  hostNetwork: true
+                  dnsPolicy: ClusterFirstWithHostNet
+                  serviceAccountName: torch-cross-node
+                  imagePullSecrets:
+                    - name: rh-ee-sampark-dev-bot-pull-secret
+                  securityContext:
+                    runAsUser: 1000
+                    runAsGroup: 0
+                  containers:
+                    - name: node
+                      image: quay.io/rh-ee-sampark/devcontainers:py3.10
+                      command: ["/bin/bash", "/opt/rz/entrypoint.sh"]
+                      securityContext:
+                        capabilities:
+                          add: ["IPC_LOCK"]
+                      env:
+                        - name: POD_NAMESPACE
+                          valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+                        - name: RUN_ID
+                          valueFrom: {fieldRef: {fieldPath: "metadata.labels['jobset.sigs.k8s.io/jobset-name']"}}
+                        - name: RENDEZVOUS_CM
+                          value: torch-cross-node-rendezvous
+                        - name: IB_DEV
+                          value: mlx5_0
+                      resources:
+                        requests: {cpu: "8", memory: 64Gi, nvidia.com/gpu: "1", rdma/rdma_shared_device_a: "1"}
+                        limits:   {cpu: "16", memory: 128Gi, nvidia.com/gpu: "1", rdma/rdma_shared_device_a: "1"}
+                      volumeMounts:
+                        - {name: pytorch-eco-data, mountPath: /home/devuser}
+                        - {name: entrypoint, mountPath: /opt/rz}
+                        - {name: dshm, mountPath: /dev/shm}
+                  volumes:
+                    # Populated dev PVC (miniconda + editable torch BUILT WITH the NVSHMEM
+                    # backend). Shadows the dev image's empty /home/devuser, so torch/
+                    # torchrun/python3 all resolve from here. Same PVC the rayclusters use.
+                    # RWX CephFS -> mountable by both nodes' pods at once.
+                    - name: pytorch-eco-data
+                      persistentVolumeClaim:
+                        claimName: pytorch-py3-10-skpark-rh
+                    - name: entrypoint
+                      configMap: {name: torch-cross-node-entrypoint, defaultMode: 0555}
+                    - name: dshm
+                      emptyDir: {medium: Memory}
+---
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: ClusterTrainingRuntime
+metadata:
+  name: torch-cross-node-4gpu
+  labels:
+    trainer.kubeflow.org/framework: torch
+spec:
+  mlPolicy:
+    numNodes: 2
+    torch:
+      numProcPerNode: 2
+  template:
+    spec:
+      replicatedJobs:
+        - name: node
+          template:
+            spec:
+              backoffLimit: 0
+              template:
+                metadata:
+                  labels:
+                    app: torch-cross-node
+                spec:
+                  hostNetwork: true
+                  dnsPolicy: ClusterFirstWithHostNet
+                  serviceAccountName: torch-cross-node
+                  imagePullSecrets:
+                    - name: rh-ee-sampark-dev-bot-pull-secret
+                  securityContext:
+                    runAsUser: 1000
+                    runAsGroup: 0
+                  containers:
+                    - name: node
+                      image: quay.io/rh-ee-sampark/devcontainers:py3.10
+                      command: ["/bin/bash", "/opt/rz/entrypoint.sh"]
+                      securityContext:
+                        capabilities:
+                          add: ["IPC_LOCK"]
+                      env:
+                        - name: POD_NAMESPACE
+                          valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+                        - name: RUN_ID
+                          valueFrom: {fieldRef: {fieldPath: "metadata.labels['jobset.sigs.k8s.io/jobset-name']"}}
+                        - name: RENDEZVOUS_CM
+                          value: torch-cross-node-rendezvous
+                        - name: IB_DEV
+                          value: mlx5_0
+                      resources:
+                        requests: {cpu: "8", memory: 64Gi, nvidia.com/gpu: "2", rdma/rdma_shared_device_a: "1"}
+                        limits:   {cpu: "16", memory: 128Gi, nvidia.com/gpu: "2", rdma/rdma_shared_device_a: "1"}
+                      volumeMounts:
+                        - {name: pytorch-eco-data, mountPath: /home/devuser}
+                        - {name: entrypoint, mountPath: /opt/rz}
+                        - {name: dshm, mountPath: /dev/shm}
+                  volumes:
+                    # Populated dev PVC (miniconda + editable torch BUILT WITH the NVSHMEM
+                    # backend). Shadows the dev image's empty /home/devuser, so torch/
+                    # torchrun/python3 all resolve from here. Same PVC the rayclusters use.
+                    # RWX CephFS -> mountable by both nodes' pods at once.
+                    - name: pytorch-eco-data
+                      persistentVolumeClaim:
+                        claimName: pytorch-py3-10-skpark-rh
+                    - name: entrypoint
+                      configMap: {name: torch-cross-node-entrypoint, defaultMode: 0555}
+                    - name: dshm
+                      emptyDir: {medium: Memory}
+---
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: ClusterTrainingRuntime
+metadata:
+  name: torch-cross-node-8gpu
+  labels:
+    trainer.kubeflow.org/framework: torch
+spec:
+  mlPolicy:
+    numNodes: 2
+    torch:
+      numProcPerNode: 4
+  template:
+    spec:
+      replicatedJobs:
+        - name: node
+          template:
+            spec:
+              backoffLimit: 0
+              template:
+                metadata:
+                  labels:
+                    app: torch-cross-node
+                spec:
+                  hostNetwork: true
+                  dnsPolicy: ClusterFirstWithHostNet
+                  serviceAccountName: torch-cross-node
+                  imagePullSecrets:
+                    - name: rh-ee-sampark-dev-bot-pull-secret
+                  securityContext:
+                    runAsUser: 1000
+                    runAsGroup: 0
+                  containers:
+                    - name: node
+                      image: quay.io/rh-ee-sampark/devcontainers:py3.10
+                      command: ["/bin/bash", "/opt/rz/entrypoint.sh"]
+                      securityContext:
+                        capabilities:
+                          add: ["IPC_LOCK"]
+                      env:
+                        - name: POD_NAMESPACE
+                          valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+                        - name: RUN_ID
+                          valueFrom: {fieldRef: {fieldPath: "metadata.labels['jobset.sigs.k8s.io/jobset-name']"}}
+                        - name: RENDEZVOUS_CM
+                          value: torch-cross-node-rendezvous
+                        - name: IB_DEV
+                          value: mlx5_0
+                      resources:
+                        requests: {cpu: "16", memory: 128Gi, nvidia.com/gpu: "4", rdma/rdma_shared_device_a: "1"}
+                        limits:   {cpu: "32", memory: 256Gi, nvidia.com/gpu: "4", rdma/rdma_shared_device_a: "1"}
+                      volumeMounts:
+                        - {name: pytorch-eco-data, mountPath: /home/devuser}
+                        - {name: entrypoint, mountPath: /opt/rz}
+                        - {name: dshm, mountPath: /dev/shm}
+                  volumes:
+                    # Populated dev PVC (miniconda + editable torch BUILT WITH the NVSHMEM
+                    # backend). Shadows the dev image's empty /home/devuser, so torch/
+                    # torchrun/python3 all resolve from here. Same PVC the rayclusters use.
+                    # RWX CephFS -> mountable by both nodes' pods at once.
+                    - name: pytorch-eco-data
+                      persistentVolumeClaim:
+                        claimName: pytorch-py3-10-skpark-rh
+                    - name: entrypoint
+                      configMap: {name: torch-cross-node-entrypoint, defaultMode: 0555}
+                    - name: dshm
+                      emptyDir: {medium: Memory}

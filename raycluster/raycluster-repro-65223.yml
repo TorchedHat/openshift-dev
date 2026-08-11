@@ -1,0 +1,376 @@
+# RayCluster to reproduce ray-project/ray#65223
+# ("Request ID sharing causes instance starvation due to launch_errors dict collision")
+#
+# The bug fires when, in a SINGLE autoscaler-v2 reconcile:
+#   (1) two worker groups scale UP together  -> they share one launch request_id
+#       (reconciler.py:816 mints one uuid per reconcile for all node types), AND
+#   (2) some worker group has a non-empty scaleStrategy.workersToDelete  -> the KubeRay
+#       provider aborts launch() and emits one LaunchNodeError per node type, all with
+#       the SAME request_id (cloud_provider.py:191-203, 437-447).
+#   -> reconciler.py:356 collapses them by request_id, so only ONE node type gets
+#      ALLOCATION_FAILED; the other "escapes" and stays REQUESTED.
+#
+# This cluster is tuned to make that race hittable:
+#   * two CPU-only groups, each advertising a DISTINCT custom resource (widget_a / widget_b)
+#     so you can drive each group's demand independently and simultaneously.
+#   * min=0 on both groups so scale up/down is fully under your control.
+#   * slowed pod deletion (long terminationGracePeriodSeconds + preStop sleep) so a
+#     pending workersToDelete lingers long enough to overlap a scale-up.
+#   * short idleTimeoutSeconds so scale-down (which creates the pending delete) happens fast.
+#
+# Run the accompanying driver: raycluster/repro_65223.py
+apiVersion: ray.io/v1alpha1
+kind: RayCluster
+metadata:
+  name: raycluster-repro-65223
+  namespace: <username>
+spec:
+  rayVersion: "3.0.0"
+  enableInTreeAutoscaling: true
+  autoscalerOptions:
+    version: v2
+    upscalingMode: Default
+    # Short idle timeout so a scaled-up pod is marked for deletion quickly,
+    # populating scaleStrategy.workersToDelete (condition 2).
+    idleTimeoutSeconds: 15
+    imagePullPolicy: Always
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 0
+    # The autoscaler runs as a SIDECAR container. It does NOT run our initContainers and
+    # does NOT inherit the head's volume mounts, so with the slim :runtime image (no
+    # python/ray baked in) it has no `ray` on PATH and fails to start. Mounting the dev PVC
+    # gives the sidecar the PVC's miniconda + `ray` wrapper (PATH already includes
+    # /home/devuser/miniconda/bin via the image ENV). It ALSO makes the autoscaler run the
+    # EDITABLE ray master checkout -- i.e. the actual reconciler.py we're reproducing/
+    # patching -- instead of some pip ray baked into the image.
+    volumeMounts:
+      - name: pytorch-eco-data
+        mountPath: /home/devuser
+    env: []
+    envFrom: []
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+  headGroupSpec:
+    serviceType: ClusterIP
+    rayStartParams:
+      dashboard-host: "0.0.0.0"
+      num-cpus: "0"
+      no-monitor: "true"
+    template:
+      metadata: {}
+      spec:
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 0
+        initContainers:
+        # NOTE: the configure_data_dir init container is intentionally omitted for the
+        # slim runtime image. The dev PVC is already populated (miniconda + built editable
+        # ray/torch), and the runtime image has a near-empty /home/devuser with no
+        # .image-build-id -- so configure_data_dir would needlessly rsync and fail
+        # (exit 23 -> crashloop). Only install-editable-ray (idempotent) is needed.
+        # Run against the editable master checkout of Ray so this reproduces the bug
+        # (and lets you validate a fix) using the code in the mounted repo.
+        - name: install-editable-ray
+          image: quay.io/rh-ee-sampark/devcontainers:runtime
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SITE=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+              rm -rf "$SITE/ray" "$SITE"/ray-*.dist-info
+              echo "import sys; sys.path.insert(0, '/home/devuser/devcontainers/ray/python')" > "$SITE/ray-editable.pth"
+              BIN=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['scripts'])")
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.scripts.scripts import main\nmain()\n' > "$BIN/ray" && chmod +x "$BIN/ray"
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.tune.cli.scripts import cli\ncli()\n' > "$BIN/tune" && chmod +x "$BIN/tune"
+              printf '#!/home/devuser/miniconda/bin/python3\nfrom ray.serve.scripts import cli\ncli()\n' > "$BIN/serve" && chmod +x "$BIN/serve"
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
+        containers:
+        - name: ray-head
+          image: quay.io/rh-ee-sampark/devcontainers:runtime
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 4
+              memory: 16Gi
+            requests:
+              cpu: 2
+              memory: 8Gi
+          ports:
+          - containerPort: 6379
+            name: gcs
+          - containerPort: 8265
+            name: dashboard
+          - containerPort: 10001
+            name: client
+          - containerPort: 8000
+            name: serve
+          env:
+          - name: MY_POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          - name: ANTHROPIC_VERTEX_PROJECT_ID
+            value: ""
+          - name: CLAUDE_CONFIG_DIR
+            value: /home/devuser/.claude
+          - name: GCE_METADATA_HOST
+            value: "127.0.0.1:1"
+          # Make the autoscaler reconcile/log verbosely so the collision is observable.
+          - name: RAY_verbose_autoscaler
+            value: "1"
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
+            - name: ssh-key
+              readOnly: true
+              mountPath: /home/devuser/.ssh
+            - name: gcloud-config
+              readOnly: true
+              mountPath: /home/devuser/.config/gcloud
+            - name: claude-config
+              mountPath: /home/devuser/.claude
+            - name: bazelrc
+              mountPath: /home/devuser/.bazelrc
+              subPath: .bazelrc
+            - name: gdbinit
+              mountPath: /home/devuser/.gdbinit
+              subPath: .gdbinit
+            - name: dshm
+              mountPath: /dev/shm
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh","-c","ray stop"]
+        imagePullSecrets:
+          - name: rh-ee-sampark-dev-bot-pull-secret
+        volumes:
+          - name: ssh-key
+            secret:
+              secretName: <username>-git-ssh-key
+              items:
+                - key: ssh-privatekey
+                  path: id_ed25519
+                - key: ssh-publickey
+                  path: id_ed25519.pub
+                - key: known_hosts
+                  path: known_hosts
+              defaultMode: 0640
+          - name: gcloud-config
+            secret:
+              secretName: <username>-gcloud-config
+              defaultMode: 0640
+          - name: claude-config
+            emptyDir: {}
+          - name: pytorch-eco-data
+            persistentVolumeClaim:
+              # Use the populated dev PVC (dev home + Ray master checkout at
+              # devcontainers/ray/python). This is the PVC the live raycluster-3w uses.
+              # NOTE: pytorch-py3-10-<username> is a fresh/empty PVC and will fail the
+              # configure_data_dir + editable-ray init containers.
+              claimName: pytorch-ibmc-storage-<username>
+          - name: gdbinit
+            configMap:
+              name: gdbinit
+          - name: bazelrc
+            configMap:
+              name: bazelrc
+          - name: init-script
+            configMap:
+              name: init-script
+              defaultMode: 0755
+          - name: dshm
+            emptyDir:
+              medium: Memory
+  workerGroupSpecs:
+  # -------------------------------------------------------------------------
+  # group-a: CPU-only, advertises custom resource "widget_a".
+  # This group is used both as the SCALE-DOWN source (to create a pending
+  # workersToDelete) and as one of the two groups scaled up in the racing reconcile.
+  # -------------------------------------------------------------------------
+  - groupName: group-a
+    replicas: 0
+    minReplicas: 0
+    maxReplicas: 5
+    rayStartParams:
+      # KubeRay requires the doubly-quoted/escaped form for custom resources.
+      resources: '"{\"widget_a\": 100}"'
+    template:
+      spec:
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 0
+        # Slow deletion so scaleStrategy.workersToDelete lingers ~90s, widening the
+        # window where a pending delete overlaps a scale-up (condition 2).
+        terminationGracePeriodSeconds: 120
+        initContainers:
+        - name: install-editable-ray
+          image: quay.io/rh-ee-sampark/devcontainers:runtime
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SITE=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+              rm -rf "$SITE/ray" "$SITE"/ray-*.dist-info
+              echo "import sys; sys.path.insert(0, '/home/devuser/devcontainers/ray/python')" > "$SITE/ray-editable.pth"
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
+        containers:
+        - name: ray-worker-a
+          image: quay.io/rh-ee-sampark/devcontainers:runtime
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 2
+              memory: 4Gi
+            requests:
+              cpu: 1
+              memory: 2Gi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
+            - name: init-script
+              mountPath: /scripts
+            - name: dshm
+              mountPath: /dev/shm
+          env:
+            - name: RAY_DISABLE_DOCKER_CPU_WARNING
+              value: "1"
+            - name: TYPE
+              value: "worker"
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          lifecycle:
+            preStop:
+              exec:
+                # Delay actual termination to keep the pod (and its workersToDelete
+                # entry) around long enough to race a scale-up.
+                command: ["/bin/sh","-c","sleep 90; ray stop"]
+        imagePullSecrets:
+          - name: rh-ee-sampark-dev-bot-pull-secret
+        volumes:
+          - name: pytorch-eco-data
+            persistentVolumeClaim:
+              # Use the populated dev PVC (dev home + Ray master checkout at
+              # devcontainers/ray/python). This is the PVC the live raycluster-3w uses.
+              # NOTE: pytorch-py3-10-<username> is a fresh/empty PVC and will fail the
+              # configure_data_dir + editable-ray init containers.
+              claimName: pytorch-ibmc-storage-<username>
+          - name: init-script
+            configMap:
+              name: init-script
+              defaultMode: 0755
+          - name: dshm
+            emptyDir:
+              medium: Memory
+  # -------------------------------------------------------------------------
+  # group-b: CPU-only, advertises custom resource "widget_b".
+  # The second node type in the racing scale-up. This is the instance expected to
+  # "escape" the ALLOCATION_FAILED due to the request_id dict collision.
+  # -------------------------------------------------------------------------
+  - groupName: group-b
+    replicas: 0
+    minReplicas: 0
+    maxReplicas: 5
+    rayStartParams:
+      resources: '"{\"widget_b\": 100}"'
+    template:
+      spec:
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 0
+        terminationGracePeriodSeconds: 120
+        initContainers:
+        - name: install-editable-ray
+          image: quay.io/rh-ee-sampark/devcontainers:runtime
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SITE=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+              rm -rf "$SITE/ray" "$SITE"/ray-*.dist-info
+              echo "import sys; sys.path.insert(0, '/home/devuser/devcontainers/ray/python')" > "$SITE/ray-editable.pth"
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
+        containers:
+        - name: ray-worker-b
+          image: quay.io/rh-ee-sampark/devcontainers:runtime
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 2
+              memory: 4Gi
+            requests:
+              cpu: 1
+              memory: 2Gi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
+            - name: init-script
+              mountPath: /scripts
+            - name: dshm
+              mountPath: /dev/shm
+          env:
+            - name: RAY_DISABLE_DOCKER_CPU_WARNING
+              value: "1"
+            - name: TYPE
+              value: "worker"
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh","-c","sleep 90; ray stop"]
+        imagePullSecrets:
+          - name: rh-ee-sampark-dev-bot-pull-secret
+        volumes:
+          - name: pytorch-eco-data
+            persistentVolumeClaim:
+              # Use the populated dev PVC (dev home + Ray master checkout at
+              # devcontainers/ray/python). This is the PVC the live raycluster-3w uses.
+              # NOTE: pytorch-py3-10-<username> is a fresh/empty PVC and will fail the
+              # configure_data_dir + editable-ray init containers.
+              claimName: pytorch-ibmc-storage-<username>
+          - name: init-script
+            configMap:
+              name: init-script
+              defaultMode: 0755
+          - name: dshm
+            emptyDir:
+              medium: Memory
