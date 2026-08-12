@@ -1,23 +1,55 @@
 # torch-cross-node — multi-node distributed test orchestrator
 
 A **purely cross-node** orchestrator for PyTorch distributed / NVSHMEM tests on the
-pytorch-openshift cluster, built on **Kubeflow Trainer v2** (`TrainJob` +
-`ClusterTrainingRuntime`). You submit a tiny `TrainJob` that references a GPU-bucket
-runtime; the runtime co-starts one pod per node, forces them onto different nodes so the
-RDMA fabric is actually exercised, wires up the rendezvous, and runs your launcher-style
-script with `torchrun`.
+pytorch-openshift cluster, built on **Kubeflow Trainer v2** (`TrainJob` + `TrainingRuntime`).
+You submit a tiny `TrainJob` that references a GPU-bucket runtime; the runtime co-starts one pod
+per node, forces them onto different nodes so the RDMA fabric is actually exercised, wires up the
+rendezvous, and runs your launcher-style script with `torchrun`.
 
 The runtimes are **non-hostNetwork** (they ride the OVN pod network) and allocate GPUs via
 **NVIDIA DRA** (Dynamic Resource Allocation) with **symmetric bus-pinning**, not the classic
-`nvidia.com/gpu` device plugin (which is disabled cluster-wide — DRA is the sole GPU
-allocator). See [`../nvshmem/README.md`](../nvshmem/README.md) for the transport rationale.
+`nvidia.com/gpu` device plugin (which is disabled cluster-wide — DRA is the sole GPU allocator).
+See [`../nvshmem/README.md`](../nvshmem/README.md) for the transport rationale.
+
+## Two drivers, any namespace
+
+The orchestrator is driven by **two self-contained scripts** — Python **stdlib only**, so they run
+anywhere `oc` is logged in (your laptop after `oc login`, a bastion, or a pod with the `oc`
+binary). Everything they create is derived from `--namespace`, so **any namespace runs the
+orchestrator against its own dev PVC** — you provide the namespace, they do the rest.
+
+| Script | Role |
+|---|---|
+| **`setup-orchestrator.py`** | One-time per-namespace setup (arg-driven). Creates the ServiceAccount, binds the SCC, builds the entrypoint ConfigMap, and installs the three **`TrainingRuntime`s** with that namespace's PVC/image baked in. |
+| **`submit-job.py`** | Per-run job submission (interactive; flags suppress prompts). Publishes your test script, runs the DRA bus-picker to stamp the symmetric `ResourceClaimTemplate`, and applies a `TrainJob`. |
+
+Because a PVC is only mountable from its own namespace, the runtime is a **namespaced
+`TrainingRuntime`** (one per namespace), so multiple users can run side by side without collisions.
+The `TrainJob` must be submitted into the same namespace as its runtime (`submit-job.py` handles
+this).
+
+## Quickstart
+
+```bash
+# 1) one-time setup for your namespace (SA + SCC + entrypoint CM + 3 TrainingRuntimes)
+./setup-orchestrator.py --namespace <your-namespace>
+
+# 2) make the test script visible + launch (interactive — it prompts for what it needs)
+./submit-job.py --namespace <your-namespace>
+
+# ...or fully scripted:
+./submit-job.py -n <your-namespace> --script ../nvshmem/test_symmem_internode.py --bucket 4gpu --yes
+```
+
+Both accept `--dry-run` to print the exact rendered manifests (pure YAML on stdout — pipeable to
+`oc apply -f -`) without touching the cluster.
 
 ## GPU buckets
 
 Every runtime is **2 nodes** (internode RDMA). They differ only in GPUs-per-node and the
 DRA claim template they reference:
 
-| Runtime | Layout | Total GPUs | DRA claim template |
+| Bucket / Runtime | Layout | Total GPUs | DRA claim template |
 |---|---|---|---|
 | `torch-cross-node-2gpu` | 2 nodes × 1 | 2 | `symmetric-gpu-run` (1 bus) |
 | `torch-cross-node-4gpu` | 2 nodes × 2 | 4 | `symmetric-gpu-run-2` (2 buses) |
@@ -43,9 +75,10 @@ is already taken on a node, the pod stays Pending instead of landing asymmetrica
 
 Two pieces cooperate:
 
-- **`dra-preflight-launch.py`** — before each launch, picks a set of `--gpus` bus IDs that
-  are mutually free on ≥2 nodes, (re)stamps the `ResourceClaimTemplate` with one pinned
-  request per GPU, and submits the runtime + TrainJob.
+- **`submit-job.py`** — before each launch, its DRA bus-picker selects a set of bus IDs that
+  are mutually free on ≥2 nodes, (re)stamps the bucket's `ResourceClaimTemplate` with one
+  pinned request per GPU, then submits the `TrainJob`. It prints the free-GPU matrix and the
+  chosen buses so you can see the placement (also visible with `--dry-run`).
 - **`railguard.py`** — runs at container start, purely local now: it detects the mlx5 rail
   that this rank's GPU is PIX to and pins `NVSHMEM_HCA_LIST` (+ that rail's `/16`
   `NVSHMEM_IB_ADDR_RANGE`) to it. DRA pins the *GPU* but NVSHMEM otherwise defaults to
@@ -55,21 +88,21 @@ Two pieces cooperate:
 ## Where torch comes from (dev PVC) and choosing the image
 
 This orchestrator uses the **two-tier PVC model** (same as the rayclusters). `torch` and
-`python` are **not** in the image — they come from the populated dev PVC
-`pytorch-py3-10-skpark-rh`, which mounts at `/home/devuser` and shadows the image's
-`miniconda`. That PVC's editable torch **must be built with the NVSHMEM `symmetric_memory`
-backend** (`USE_NVSHMEM=1`, NVSHMEM present at build) — a runtime `pip install
-nvidia-nvshmem-cu12` gives you the `.so` but not the torch backend.
+`python` are **not** in the image — they come from the populated dev PVC that mounts at
+`/home/devuser` and shadows the image's `miniconda`. The setup driver defaults the PVC to
+**`pytorch-py3-10-<namespace>`** (override with `--pvc`). That PVC's editable torch **must be
+built with the NVSHMEM `symmetric_memory` backend** (`USE_NVSHMEM=1`, NVSHMEM present at build)
+— a runtime `pip install nvidia-nvshmem-cu12` gives you the `.so` but not the torch backend.
 
-Because a PVC is only mountable from its own namespace, **the whole orchestrator runs in
-`skpark-rh`**.
+Because a PVC is only mountable from its own namespace, **the whole orchestrator runs in one
+namespace** (the one you pass to both drivers).
 
 The **image** only supplies the `/usr`-level userspace + the wrapper's tools (`bash`,
 `curl`, `iproute2`, `rdma-core`) and a CUDA/Fedora userspace matching the PVC's torch build.
-GPU bucket and image are independent axes — each `TrainJob` can override
-**`spec.trainer.image`**, but that selects the **CUDA/Fedora variant**, not the python
-version (fixed by the PVC). The image is pulled with the `rh-ee-sampark-dev-bot-pull-secret`
-secret (must exist in `skpark-rh`).
+GPU bucket and image are independent axes — `submit-job.py --image` (or the `TrainJob`'s
+`spec.trainer.image`) selects the **CUDA/Fedora variant**, not the python version (fixed by the
+PVC). The image is pulled with a pull secret that must exist in the namespace (setup driver
+default `--pull-secret rh-ee-sampark-dev-bot-pull-secret`; it warns if the secret is absent).
 
 > **Why cross-node only:** these buckets exercise the RDMA/NVSHMEM internode path. For
 > intra-node (NVLink) coverage — where in-kernel ops like `one_shot_all_reduce` also work —
@@ -79,49 +112,43 @@ secret (must exist in `skpark-rh`).
 
 | File | Purpose |
 |---|---|
-| `clustertrainingruntimes.yml` | The three cross-node runtimes (cluster-scoped, non-hostNetwork + DRA). |
-| `resourceclaimtemplate-symmetric-gpu.yml` | DRA `ResourceClaimTemplate`s for symmetric placement (1 / 2 / 4 GPU). |
+| `setup-orchestrator.py` | **Setup driver** — provisions a namespace (SA, SCC, entrypoint CM, 3 `TrainingRuntime`s). |
+| `submit-job.py` | **Submit driver** — interactive; publishes the test script, picks symmetric buses, launches a `TrainJob`. |
 | `rendezvous-entrypoint-podnet.sh` | Pod-network rendezvous wrapper baked into the pods (execs `railguard.py` → `torchrun`). |
 | `railguard.py` | Per-rank NVSHMEM rail pinner (`NVSHMEM_HCA_LIST` = the GPU's PIX rail). |
-| `dra-preflight-launch.py` | Pre-flight symmetric-bus picker + launcher. |
-| `trainjob-cross-node-{2,4,8}gpu.yml` | Ready-to-run `TrainJob`s, one per bucket. |
-| `trainjob-example.yml` | Hand-editable example `TrainJob`. |
-| `rbac.yml` | `torch-cross-node` ServiceAccount (the podnet + DRA flow needs no pod API access). |
 
 ## One-time setup
 
 Assumes the cluster prereqs are in place: Trainer v2 + JobSet controllers
 (`kubeflow-system`), the **NVIDIA DRA driver** installed, and the **classic device plugin
-disabled** (DRA is the sole GPU allocator). Everything below runs in **`skpark-rh`** (where
-the dev PVC lives).
+disabled** (DRA is the sole GPU allocator).
 
 ```bash
-# 0) the dev PVC pytorch-py3-10-skpark-rh must be populated with miniconda + an editable
-#    torch BUILT WITH the NVSHMEM symmetric_memory backend (USE_NVSHMEM=1). Verify:
-#    oc run t --rm -it --image=quay.io/rh-ee-sampark/devcontainers:py3.10 -n skpark-rh \
-#      --overrides='{"spec":{"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"pytorch-py3-10-skpark-rh"}}],"containers":[{"name":"t","image":"quay.io/rh-ee-sampark/devcontainers:py3.10","stdin":true,"tty":true,"volumeMounts":[{"name":"d","mountPath":"/home/devuser"}]}]}}' \
-#      -- python3 -c "import torch,torch.distributed._symmetric_memory as s; print(s.is_nvshmem_available())"
+# creates, in <namespace>: ServiceAccount torch-cross-node, the hostnetwork-anyuid SCC binding,
+# the torch-cross-node-entrypoint-podnet ConfigMap (entrypoint.sh + railguard.py), and the three
+# namespaced TrainingRuntimes (torch-cross-node-{2,4,8}gpu) with the namespace PVC baked in.
+./setup-orchestrator.py --namespace <namespace>
 
-# 1) SA (+ RBAC) in skpark-rh
-oc apply -f rbac.yml
+# common overrides (all optional):
+./setup-orchestrator.py --namespace <namespace> \
+    --pvc pytorch-py3-10-<namespace> \            # default; override for a differently-named PVC
+    --image quay.io/rh-ee-sampark/devcontainers:py3.10 \
+    --pull-secret rh-ee-sampark-dev-bot-pull-secret \
+    --buckets 2gpu,4gpu \                          # install a subset of runtimes
+    --with-default-rcts \                          # pre-create default RCTs (submit re-stamps them)
+    --dry-run                                      # print the manifests, apply nothing
 
-# 2) the entrypoint ConfigMap the runtimes mount at /opt/rz — MUST include BOTH the wrapper
-#    and railguard.py (the wrapper execs /opt/rz/railguard.py)
-oc create configmap torch-cross-node-entrypoint-podnet \
-  --from-file=entrypoint.sh=rendezvous-entrypoint-podnet.sh \
-  --from-file=railguard.py=railguard.py -n skpark-rh
-
-# 3) bind the SCC that grants a fixed UID (RunAsAny) + IPC_LOCK. hostNetwork is no longer
-#    used; this custom SCC is just the one that allows anyuid + IPC_LOCK together.
-oc adm policy add-scc-to-user hostnetwork-anyuid -z torch-cross-node -n skpark-rh
-
-# 4) DRA ResourceClaimTemplates (or let the pre-flight picker stamp them per launch)
-oc apply -f resourceclaimtemplate-symmetric-gpu.yml
-
-# 5) install the cluster-scoped runtimes (once for the whole cluster)
-oc apply -f clustertrainingruntimes.yml
-oc get clustertrainingruntimes
+oc -n <namespace> get trainingruntimes
 ```
+
+> **Prereq — the dev PVC** must exist in the namespace and be populated with miniconda + an
+> editable torch **built with the NVSHMEM `symmetric_memory` backend** (`USE_NVSHMEM=1`). The
+> setup driver warns (but does not fail) if the PVC or pull secret is missing, so you can create
+> them in any order.
+>
+> **Permissions:** the identity needs, in the target namespace, create on
+> serviceaccount/configmap/trainingruntime (+ resourceclaimtemplate with `--with-default-rcts`),
+> and `oc adm policy add-scc-to-user` for the SCC (cluster-admin or an equivalent grant).
 
 ## Submit a job
 
@@ -132,47 +159,29 @@ self-spawning `MultiProcessTestCase` unit tests are **not** compatible — they'
 under `torchrun`.
 
 ```bash
-# make the test script available to the pods (referenced by the trainjob manifests)
-oc create configmap cross-node-test \
-  --from-file=test_symmem_internode.py=../nvshmem/test_symmem_internode.py -n skpark-rh
+# interactive — prompts for namespace, test-script path, GPU bucket, image, job name:
+./submit-job.py
+
+# or drive it entirely with flags (skips the matching prompts):
+./submit-job.py --namespace <namespace> \
+    --script ../nvshmem/test_symmem_internode.py \
+    --bucket 4gpu \                                # 2gpu | 4gpu | 8gpu
+    --job-name symmem-4gpu \
+    --script-args "--iters 5" \                    # extra args passed after the script path
+    --yes                                          # don't prompt to confirm
+
+./submit-job.py --namespace <namespace> --script ... --dry-run   # matrix + pick + manifests only
 ```
 
-**Recommended: the pre-flight picker** — it selects mutually-free symmetric buses, stamps
-the claim template, and launches, so you never land on a contended/asymmetric GPU:
+`submit-job.py` publishes your script as the `cross-node-test` ConfigMap (mounted at
+`/workspace`), stamps the symmetric `ResourceClaimTemplate` for the bucket, applies the
+`TrainJob`, and prints watch/logs/clean commands:
 
 ```bash
-./dra-preflight-launch.py                       # 2gpu: pick a free bus, stamp, launch symmem-2gpu
-./dra-preflight-launch.py --dry-run             # just show the free-GPU matrix + the pick
-
-# 4 GPU (2 nodes x 2):
-./dra-preflight-launch.py --gpus 2 --rct-name symmetric-gpu-run-2 \
-    --runtime clustertrainingruntimes.yml --trainjob trainjob-cross-node-4gpu.yml \
-    --trainjob-name symmem-4gpu
-
-# 8 GPU (2 nodes x 4):
-./dra-preflight-launch.py --gpus 4 --rct-name symmetric-gpu-run-4 \
-    --runtime clustertrainingruntimes.yml --trainjob trainjob-cross-node-8gpu.yml \
-    --trainjob-name symmem-8gpu
+oc -n <namespace> get pods -l trainer.kubeflow.org/trainjob-name=<job> -o wide -w
+oc -n <namespace> logs -f -l trainer.kubeflow.org/trainjob-name=<job> --max-log-requests 8
+oc -n <namespace> delete trainjob <job>
 ```
-
-> **Where to run it:** anywhere with `oc` logged in to the cluster + `python3` (stdlib only —
-> no `pip install`, no in-cluster API library). Your laptop after `oc login`, a bastion, or a
-> pod with the `oc` binary all work. The identity needs **cluster-scoped** read on
-> `resourceslices`/`resourceclaims` and write on `clustertrainingruntimes`, plus create/delete
-> of `resourceclaimtemplate`/`trainjob` in `skpark-rh` — a cluster-admin login covers this; a
-> plain namespaced ServiceAccount would need extra ClusterRole grants.
-
-**Or apply a TrainJob directly** (uses the fixed buses baked into
-`resourceclaimtemplate-symmetric-gpu.yml`; pods stay Pending if those buses are busy):
-
-```bash
-oc apply -f trainjob-cross-node-2gpu.yml        # or -4gpu / -8gpu
-oc get trainjob symmem-2gpu -n skpark-rh
-oc get pods -l jobset.sigs.k8s.io/jobset-name=symmem-2gpu -o wide -n skpark-rh
-oc logs -f -l jobset.sigs.k8s.io/jobset-name=symmem-2gpu --max-log-requests 4 -n skpark-rh
-```
-
-Clean up: `oc delete trainjob symmem-2gpu -n skpark-rh`.
 
 ### Expected logs
 
@@ -210,8 +219,8 @@ on these IBM Cloud VSI nodes.
 
 ## Requirements / caveats
 
-- **Torch comes from the dev PVC**, not the image: `pytorch-py3-10-skpark-rh` (mounted at
-  `/home/devuser`) must hold miniconda + an editable torch **built with the
+- **Torch comes from the dev PVC**, not the image: the namespace's `pytorch-py3-10-<namespace>`
+  (mounted at `/home/devuser`) must hold miniconda + an editable torch **built with the
   `symmetric_memory` NVSHMEM backend** (`USE_NVSHMEM=1`) and the NVSHMEM runtime `.so`. The
   **image** only needs `bash`, `curl`, `iproute2`, `rdma-core` and a CUDA/Fedora userspace
   matching that torch build.
@@ -223,10 +232,9 @@ on these IBM Cloud VSI nodes.
   per-container start stall from the CRI-O SELinux relabel walk on first mount (see memory
   `cephfs-selinux-relabel-container-start`), plus slower `$HOME` I/O.
 - **No gang scheduler installed.** Under GPU contention a 2-node job could get one pod
-  scheduled and one Pending. The pre-flight picker mitigates this by only picking buses
+  scheduled and one Pending. The `submit-job.py` bus-picker mitigates this by only picking buses
   mutually free on ≥2 nodes. For true all-or-nothing scheduling, install Coscheduling or
   Volcano and add `spec.podGroupPolicy.coscheduling` to the runtimes.
-- **Fixed to `skpark-rh`:** the runtimes mount the namespaced dev PVC, so the SA, entrypoint
-  ConfigMap, SCC binding, and `ResourceClaimTemplate`s must all live in `skpark-rh`, and
-  TrainJobs must be submitted there. The runtimes themselves are cluster-scoped but reference
-  the namespaced SA/PVC/ConfigMap/claim by name.
+- **Single-namespace by design:** the runtime mounts the namespaced dev PVC, so the SA,
+  entrypoint ConfigMap, SCC binding, `ResourceClaimTemplate`s, `TrainingRuntime`s, and
+  `TrainJob` all live in the one namespace you pass to the drivers.
