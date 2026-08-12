@@ -1,0 +1,185 @@
+# image-prewarmer — periodically pre-pull the full CI matrix of dev/runtime images onto every
+# GPU node's CRI-O cache, so cross-node TrainJobs never lose the rendezvous race to a cold pull.
+#
+# WHY
+# ---
+# Cross-node TrainJobs race a rendezvous timeout (rdzv_conf=timeout=120s). On a node that has never
+# pulled the ~multi-GB dev image, the first pull can exceed that window -> rank-0 times out waiting
+# for the cold rank and the whole job tears down. Keeping every GPU node's image cache warm removes
+# the race: when a job lands, the image is already present (or only changed layers pull).
+#
+# Images live on a dedicated ~7TB NVMe imageFs, so they are never GC-evicted; the periodic re-run
+# only picks up new pushes to the mutable tags.
+#
+# SHAPE: CronJob (per-node fan-out), NOT a DaemonSet
+# --------------------------------------------------
+# A DaemonSet would keep a pod running on every node forever. Instead this is a CronJob: pods exist
+# ONLY during each scheduled run, then Complete and go away — no long-lived/continuously-restarting
+# pods. Per-node coverage is achieved by making the Job run one pod on EACH GPU node:
+#   * completions == parallelism == <number of GPU nodes>  (see NODE COUNT note below)
+#   * podAntiAffinity(hostname) forbids two of these pods on the same node -> one per node.
+# Each pod pulls the whole image list via `crictl pull` against the node's CRI-O socket, then exits.
+#
+# IMAGES (kept in sync with .github/workflows/*.yml)
+# --------------------------------------------------
+#   build-push.yml          dev:     py{3.10,3.11,3.12,3.13,3.14} x cuda{12.9,13.0}
+#                                     -> :py<V>           (cuda 12.9, no suffix)
+#                                     -> :py<V>-cuda13.0  (cuda 13.0)
+#   build-push-runtime.yml  runtime: cuda{12.9,13.0} -> :runtime , :runtime-cuda13.0
+# = 10 dev + 2 runtime = 12 tags. (:latest is an alias of :py3.10 and is skipped.)
+# When the workflow matrix changes, update the TAGS list in the container args below.
+#
+# CRI-O PULL (privileged)
+# -----------------------
+# Pulling an arbitrary LIST of images (not the pod's own image) means talking to the container
+# runtime directly: the pod mounts the host CRI-O socket + the host `crictl` binary and calls
+# `crictl pull`. That needs a privileged container, hence the privileged-SCC RoleBinding below.
+# Auth: the existing rh-ee-sampark-dev-bot-pull-secret is mounted read-only; its base64 `auth`
+# token is passed straight to `crictl pull --auth` (dockerconfigjson `.auths[].auth` IS the
+# base64 "user:password" that --auth expects).
+#
+# NODE COUNT: completions/parallelism below are set to 3 (the current GPU-node count). If GPU nodes
+# are added/removed, update BOTH numbers. Too-low = some nodes not warmed; too-high = the extra
+# pods stay Pending (anti-affinity) until activeDeadlineSeconds fails the run (already-scheduled
+# nodes still get warmed).
+#
+# APPLY:   oc apply -f cronjob/image-prewarmer.yml
+# TEST NOW: oc -n skpark-rh create job prewarm-manual --from=cronjob/image-prewarmer
+# WATCH:   oc -n skpark-rh get pods -l app=image-prewarmer -o wide
+# LOGS:    oc -n skpark-rh logs -l app=image-prewarmer --max-log-requests 8 --prefix
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: image-prewarmer
+  namespace: skpark-rh
+---
+# Grant the privileged SCC to the SA (needed for the host CRI-O socket + host crictl + privileged).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: image-prewarmer-scc-privileged
+  namespace: skpark-rh
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:privileged
+subjects:
+  - kind: ServiceAccount
+    name: image-prewarmer
+    namespace: skpark-rh
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: image-prewarmer
+  namespace: skpark-rh
+  labels:
+    app: image-prewarmer
+spec:
+  schedule: "0 */6 * * *"          # every 6 hours; unchanged images pull cheaply (manifest check)
+  concurrencyPolicy: Forbid        # never overlap runs
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      completions: 3               # == GPU node count (see NODE COUNT note above)
+      parallelism: 3               # == GPU node count
+      activeDeadlineSeconds: 1800  # bound a run (e.g. if a node is unschedulable)
+      backoffLimit: 4
+      template:
+        metadata:
+          labels:
+            app: image-prewarmer
+        spec:
+          serviceAccountName: image-prewarmer
+          restartPolicy: OnFailure
+          # Land on GPU nodes only, one pod per node.
+          nodeSelector:
+            nvidia.com/gpu.present: "true"
+          tolerations:
+            - key: nvidia.com/gpu
+              operator: Exists
+              effect: NoSchedule
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app: image-prewarmer
+          volumes:
+            # Host CRI-O socket — crictl talks to the node's runtime through it.
+            - name: crio-sock
+              hostPath:
+                path: /run/crio/crio.sock
+                type: Socket
+            # Host crictl binary (always present on OpenShift nodes) — avoids shipping our own.
+            - name: crictl-bin
+              hostPath:
+                path: /usr/bin/crictl
+                type: File
+            # Pull credentials for the private quay repo (read-only).
+            - name: pull-secret
+              secret:
+                secretName: rh-ee-sampark-dev-bot-pull-secret
+          containers:
+            - name: prewarm
+              image: registry.access.redhat.com/ubi9/ubi:latest   # public; ships bash+sed+coreutils
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                privileged: true          # required to use the host CRI-O socket
+                runAsUser: 0
+              env:
+                - name: CONTAINER_RUNTIME_ENDPOINT
+                  value: unix:///run/crio/crio.sock
+                - name: IMAGE_SERVICE_ENDPOINT
+                  value: unix:///run/crio/crio.sock
+                - name: NODE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.nodeName
+              volumeMounts:
+                - name: crio-sock
+                  mountPath: /run/crio/crio.sock
+                - name: crictl-bin
+                  mountPath: /usr/bin/crictl
+                  readOnly: true
+                - name: pull-secret
+                  mountPath: /pull
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -uo pipefail
+                  REPO=quay.io/rh-ee-sampark/devcontainers
+                  TAGS="
+                    py3.10 py3.11 py3.12 py3.13 py3.14
+                    py3.10-cuda13.0 py3.11-cuda13.0 py3.12-cuda13.0 py3.13-cuda13.0 py3.14-cuda13.0
+                    runtime runtime-cuda13.0
+                  "
+                  # Extract the base64 "auth" token from the mounted dockerconfigjson (single-registry
+                  # bot secret -> first/only "auth"). This IS what `crictl pull --auth` wants.
+                  AUTH=$(sed -n 's/.*"auth"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                           /pull/.dockerconfigjson | head -n1)
+                  if [ -z "$AUTH" ]; then echo "FATAL: no auth token in pull secret"; exit 1; fi
+                  echo "[prewarm] node=$NODE  pulling $(echo $TAGS | wc -w) tags"
+                  rc=0
+                  for T in $TAGS; do
+                    IMG="$REPO:$T"
+                    if crictl pull --auth "$AUTH" "$IMG" >/dev/null; then
+                      echo "[prewarm] OK   $IMG"
+                    else
+                      echo "[prewarm] FAIL $IMG"; rc=1
+                    fi
+                  done
+                  echo "[prewarm] node=$NODE done (rc=$rc)"
+                  exit $rc
