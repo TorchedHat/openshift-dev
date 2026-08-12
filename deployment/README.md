@@ -198,6 +198,27 @@ oc describe pod <pod> -n <username> | grep -A3 'Resource Claims'
 - **Pending on exhaustion is the new "Insufficient nvidia.com/gpu".** If no free device of the
   requested class exists on any node, the pod stays `Pending` — same end state as the classic
   plugin running out, just a different message.
+- **Never use `spec.nodeName` with DRA — pin with `nodeAffinity`/`nodeSelector` instead.**
+  Setting `spec.nodeName` makes the pod **skip the scheduler** and go straight to the kubelet, but
+  **DRA claim allocation is the scheduler's job**. The claim is then created but never allocated
+  (`status.allocation: null`, `reservedFor: null`), and the kubelet fails to start the pod with:
+  ```
+  FailedPrepareDynamicResources: ... pod is not allowed to use ResourceClaim ...
+  ```
+  The pod is stuck `ContainerCreating` even when GPUs are free. To pin a pod to a specific node,
+  use node affinity so it still routes through the scheduler:
+  ```yaml
+  spec:
+    # nodeName: <node>            # <-- REMOVE: bypasses the scheduler, breaks DRA
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchFields:
+                - key: metadata.name
+                  operator: In
+                  values: ["<node>"]
+  ```
 
 ## Migration status of files in this folder
 
