@@ -24,7 +24,8 @@ long-lived per-node Deployment instead of a TrainJob: sleep-infinity pods, one p
 pinned to the SAME symmetric DRA buses (via the same picker), with RDMA + IPC_LOCK and the dev PVC
 at /home/devuser. Exec in and iterate by hand. The lab-specific logic lives in lab.py.
     ./submit-job.py -n <ns> --lab --bucket 2gpu
-Clean up with:  oc -n <ns> delete deployment <lab-name>
+Tear it down cleanly (deletes the Deployment AND the stamped RCT, freeing the GPUs):
+    ./submit-job.py -n <ns> --lab --destroy --bucket 2gpu
 
 PREREQUISITE: run  ./setup-orchestrator.py --namespace <ns>  once for the namespace first.
 
@@ -261,12 +262,17 @@ def main():
     ap.add_argument("--pvc", default=None, help="[--lab] dev PVC to mount (default pytorch-py3-10-<ns>)")
     ap.add_argument("--replicas", type=int, default=None,
                     help="[--lab] lab pod count (default --min-nodes; one pod per node)")
+    ap.add_argument("--destroy", action="store_true",
+                    help="[--lab] tear the lab down: delete its Deployment AND stamped RCT (frees GPUs)")
     args = ap.parse_args()
 
     # --lab: hand off to the persistent-lab path (its own inputs; no test script / TrainJob).
     if args.lab:
         import lab
-        lab.submit_lab(args, sys.modules[__name__])
+        if args.destroy:
+            lab.destroy_lab(args, sys.modules[__name__])
+        else:
+            lab.submit_lab(args, sys.modules[__name__])
         return
 
     # Gather inputs — flags win; otherwise prompt (interactive) or default (piped stdin).

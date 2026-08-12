@@ -194,4 +194,42 @@ def submit_lab(args, sj):
     sj.info(f"\nWatch:  oc -n {ns} get pods -l {sel} -o wide -w")
     sj.info(f"Shell:  oc -n {ns} exec -it deploy/{lab_name} -- bash        # or a specific pod:")
     sj.info(f"        oc -n {ns} get pods -l {sel} -o name")
-    sj.info(f"Clean:  oc -n {ns} delete deployment {lab_name}")
+    sj.info(f"Clean:  ./submit-job.py -n {ns} --lab --destroy --job-name {lab_name} --bucket {bucket}")
+
+
+def destroy_lab(args, sj):
+    """Tear a persistent lab down cleanly: delete its Deployment AND the symmetric RCT the picker
+    stamped for it. `sj` is submit-job.py's module (same reuse pattern as submit_lab).
+
+    Deleting the Deployment frees the GPUs immediately -- the per-pod ResourceClaims are owned by the
+    pods and get garbage-collected when they terminate. The stamped ResourceClaimTemplate holds no
+    devices itself, but is deleted by default too: its pinned bus IDs go stale as GPUs come and go on
+    the cluster, so a leftover template would pin the next lab/job to buses that may no longer be free
+    (the submit path re-stamps it fresh anyway). Idempotent -- safe to run on an already-gone lab."""
+    ns = args.namespace or sj.prompt("Namespace", required=True)
+    bucket = args.bucket or sj.prompt("GPU bucket (2gpu/4gpu/8gpu)", default="2gpu")
+    if bucket not in sj.BUCKETS:
+        sys.exit(f"unknown bucket '{bucket}' (choices: {', '.join(sj.BUCKETS)})")
+    lab_name = args.job_name or sj.prompt("Lab name", default="nvshmem-lab")
+    rct = sj.BUCKETS[bucket]["rct"]
+
+    sj.info(f"\nDestroy plan{' (dry-run)' if args.dry_run else ''}:")
+    sj.info(f"  namespace   {ns}")
+    sj.info(f"  Deployment  {lab_name}")
+    sj.info(f"  RCT         {rct}  (bucket {bucket})\n")
+
+    if args.dry_run:
+        sj.info(f"would run:  oc -n {ns} delete deployment {lab_name} --ignore-not-found")
+        sj.info(f"would run:  oc -n {ns} delete resourceclaimtemplate {rct} --ignore-not-found")
+        return
+
+    if not args.yes and not sj.confirm(f"Delete Deployment/{lab_name} and RCT/{rct} in {ns}?"):
+        sys.exit("aborted")
+
+    # Deployment first -> pods terminate -> their ResourceClaims GC and release the GPUs; then remove
+    # the now-empty template so it can't pin a stale bus set later.
+    sj.sh("oc", "-n", ns, "delete", "deployment", lab_name, "--ignore-not-found")
+    sj.info(f"deleted Deployment/{lab_name}")
+    sj.sh("oc", "-n", ns, "delete", "resourceclaimtemplate", rct, "--ignore-not-found")
+    sj.info(f"deleted ResourceClaimTemplate/{rct}")
+    sj.info("\nLab destroyed; GPUs released (ResourceClaims GC with the pods).")
