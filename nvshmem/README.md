@@ -213,15 +213,18 @@ export NVSHMEM_REMOTE_TRANSPORT=ibrc     # keep this; ibgda is not a transport v
 export NVSHMEM_IB_ENABLE_IBGDA=1         # the actual enable knob (nvshmem-info -a)
 ```
 
-What happens on init:
+What happens on init (**current state: `PeerMappingOverride=1` is applied**, so the GPU-autonomous
+path below is what you get; the parenthesised fallback is the pre-override behaviour, still the
+fallback if the override is ever rolled back):
 
-- The GPU-rings-doorbell path fails its UAR map — `WARN: cudaHostRegister with
-  IoMemory failed error=800` / `ibgda_nic_mem_gpu_map failed` — because
-  `PeerMappingOverride` is not set on the driver. **These are non-fatal WARNs.**
-- This NVSHMEM build has `NVSHMEM_IBGDA_NIC_HANDLER: auto` and **auto-falls-back
-  to the CPU doorbell handler**: the GPU builds WQEs in GPU-memory queues, a CPU
-  thread rings the NIC doorbell.
-- IBGDA then binds on both PEs (`IBGDA: device used mlx5_5`), registers the GPU
+- The GPU-rings-doorbell path maps the NIC UAR successfully — the log reads
+  `NIC handler will be GPU.` / `NIC buffer will be on GPU memory.`, **no `error=800`
+  WARN**. (Before the override: that map failed with `WARN: cudaHostRegister with
+  IoMemory failed error=800` / `ibgda_nic_mem_gpu_map failed` — non-fatal WARNs.)
+- This NVSHMEM build has `NVSHMEM_IBGDA_NIC_HANDLER: auto`. With the override the GPU
+  handler is selected; without it, it **auto-falls-back to the CPU doorbell handler**
+  (GPU builds WQEs in GPU-memory queues, a CPU thread rings the NIC doorbell).
+- Either way IBGDA binds on both PEs (`IBGDA: device used mlx5_5`), registers the GPU
   symmetric heap via `ibv_reg_dmabuf_mr`, and cross-node transfers work.
 
 Verified with `nvshmem_device_put.cu` (2 nodes, DRA bus-pinned rail): a CUDA *kernel* issues
@@ -244,14 +247,18 @@ Both pods share the RWX dev PVC, so build `nvshmem_device_put.cu` once and run r
 > To use device-side cross-node RDMA you drop to the raw NVSHMEM device API in your own `.cu`
 > (as in `nvshmem_device_put.cu`).
 
-> **GPU-autonomous doorbell (optional, disruptive):** the runs above use the **CPU doorbell
-> handler** fallback (GPU builds WQEs, a CPU thread rings the NIC doorbell). To let the GPU ring its
-> own doorbell (lower latency), the driver needs `NVreg_RegistryDwords="PeerMappingOverride=1"`,
-> which forces a **driver-daemonset rollout across all shared GPU nodes** (kills every GPU
-> workload). It is an optimization, **not** required for IBGDA to function, and it only helps if the
-> IBM VSI hypervisor permits sibling GPU→NIC P2P MMIO. Full plan + verification gate:
+> **GPU-autonomous doorbell — now APPLIED (2026-08-12).** The driver now runs with
+> `NVreg_RegistryDwords="PeerMappingOverride=1"` on all 3 GPU nodes, so the GPU rings its **own** NIC
+> doorbell instead of the CPU-handler fallback. With it live, the `cudaHostRegister IoMemory
+> error=800` WARN is **gone** and the IBGDA log reads `NIC handler will be GPU.` /
+> `NIC buffer will be on GPU memory.` (verified with `nvshmem_device_put.cu`, both ranks PASS). This
+> confirmed the IBM VSI hypervisor **does** permit sibling GPU→NIC P2P MMIO. It's a latency
+> optimization, **not** required for IBGDA to function — if the override were ever rolled back, IBGDA
+> still works via the CPU-handler fallback (the `error=800` WARN would just reappear). How it was
+> applied/rolled back (the CM edit alone does not trigger the reload — you must bump the ClusterPolicy
+> `spec.driver` digest, then restart the DRA kubelet-plugin pods):
 > [`PEERMAPPING_ROLLOUT.md`](PEERMAPPING_ROLLOUT.md). `nvidia_peermem` is still not an option (see
-> the note above); IBGDA's dma-buf registration and the CPU-handler fallback do not need it.
+> the note above); IBGDA's dma-buf registration does not need it.
 
 ### NVLink intra-node device ops
 
@@ -290,7 +297,7 @@ calls `os._exit(0)` after printing results to skip the crashing finalizer, so
 |---|---|
 | `ibv_reg_mr(0x...) Bad address` → SIGSEGV | You're on the `ucx` transport. Set `NVSHMEM_REMOTE_TRANSPORT=ibrc`. |
 | `INIT->RTR failed ... Connection timed out` | Multiple NICs in `NVSHMEM_HCA_LIST`, or `master_addr` on the mgmt net. Use `mlx5_0:1` and a fabric IP. |
-| `cudaHostRegister IoMemory error=800` / `ibgda_nic_mem_gpu_map failed` | Non-fatal **WARN** with `NVSHMEM_IB_ENABLE_IBGDA=1`: the GPU can't map the NIC UAR (no `PeerMappingOverride`), so NVSHMEM auto-falls-back to the CPU doorbell handler and IBGDA still comes up. See [Device-side ops (IBGDA)](#device-side-ops-ibgda). Only a problem if you expected the fully GPU-autonomous doorbell path. |
+| `cudaHostRegister IoMemory error=800` / `ibgda_nic_mem_gpu_map failed` | Should **not** appear now — `PeerMappingOverride=1` is applied, so IBGDA uses the GPU doorbell (`NIC handler will be GPU.`). If you *do* see it, the driver override was rolled back / the module reloaded without it: still a non-fatal **WARN** (NVSHMEM auto-falls-back to the CPU doorbell handler and IBGDA comes up), re-apply per [`PEERMAPPING_ROLLOUT.md`](PEERMAPPING_ROLLOUT.md). See [Device-side ops (IBGDA)](#device-side-ops-ibgda). |
 | `Cannot get buffer across nodes` / `cudaErrorIllegalAddress` | App used `get_buffer` / `one_shot_all_reduce` cross-node. Use host-initiated NVSHMEM ops. |
 | `Detected use of TeamManager on multiple devices` | Missing device pinning. Add `device_id=` + `with torch.cuda.device(dev)`. |
 | `Timed out ... waiting for clients` at rendezvous | Nodes started >90s apart. Launch them near-simultaneously (node 1 first). |
