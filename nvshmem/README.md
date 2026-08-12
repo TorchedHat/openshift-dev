@@ -46,7 +46,10 @@ reasoning and the failure mode each one avoids.
     `master_addr` dial fail.
   - `rdma/rdma_shared_device_a: 1` (injects `/dev/infiniband/*`)
   - `securityContext.capabilities.add: ["IPC_LOCK"]` (RDMA memory pinning)
-  - `nvidia.com/gpu: 2`
+  - 2 GPUs via a **DRA** `ResourceClaimTemplate` (2-GPU claim) — **not** the classic
+    `nvidia.com/gpu: 2`, whose allocatable is `0` on this cluster (the NVIDIA DRA driver is the sole
+    allocator). Pin the node with `nodeAffinity`, never `spec.nodeName` (it bypasses the scheduler,
+    leaving the DRA claim unallocated). The reference yamls below do exactly this.
 - A **container image / environment that provides PyTorch with the
   `symmetric_memory` NVSHMEM backend and the NVSHMEM runtime** (`libnvshmem*` on
   `LD_LIBRARY_PATH`). The reference yamls only reserve the hardware; they do not
@@ -61,6 +64,9 @@ reasoning and the failure mode each one avoids.
   ```
 
 ## Deploy
+
+Each file also defines the `default`-namespace `gpu-2` `ResourceClaimTemplate` it needs (`oc apply`
+is idempotent, so the shared template applying twice is harmless):
 
 ```bash
 oc apply -f nvshmem-test-node0.yml
@@ -131,7 +137,7 @@ rank `i`'s id, and ranks 2–3 live on the other node. `broadcast` uses `root=3`
 |---|---|
 | **`ibrc`** ✅ | NVSHMEM's native IB transport registers the GPU symmetric heap with the NIC via **dma-buf** (`ibv_reg_dmabuf_mr`) — no `nvidia_peermem`, no MOFED. Works. |
 | `ucx` ❌ | `ibv_reg_mr(0x...) failed: Bad address` (EFAULT) → NULL proxy channel → SIGSEGV. NVSHMEM's UCX path hands the CUDA-VMM heap to UCX, which misclassifies it as host memory and never uses its dma-buf path. `UCX_MEMTYPE_CACHE=n` / `UCX_CUDA_COPY_DMABUF=yes` do **not** fix it. |
-| `ibgda` ❌ | `cudaHostRegister ... IoMemory ... error=800` / `ibgda_nic_mem_gpu_map failed` → SIGSEGV at setup. IBGDA needs the GPU to map the NIC BAR (GPUDirect Async), which the open-driver + inbox-mlx5 stack here does not support. |
+| `ibgda` ⚠️ | Works, but only for **device-side** ops — see [Device-side ops (IBGDA)](#device-side-ops-ibgda). Not needed (and not used) by the host-initiated test above; leave it off (`ibrc`) unless you specifically want in-kernel cross-node RDMA. |
 
 > `nvidia_peermem` / GPU-Operator `driver.rdma` is **not** an option: it needs the
 > MOFED-only peer-memory kernel API (`ib_register_peer_memory_client`), absent on
@@ -187,10 +193,73 @@ torch.ops.symm_mem.nvshmem_get(t, peer)                       # one-sided
 torch.ops.symm_mem.nvshmem_put_with_signal(...) / nvshmem_wait_for_signal(...)
 ```
 
-> **Net:** on this cluster, cross-node symmetric memory is limited to the
-> host-initiated NVSHMEM ops. The in-kernel/one-shot/fused-collective path is
-> intra-node (NVLink) only, because IBGDA can't be brought up on this
-> driver+NIC combination.
+> **Net:** the *torch* in-kernel peer-pointer ops (`get_buffer`,
+> `one_shot_all_reduce`, `multimem_*`) are intra-node (NVLink) only by design —
+> they dereference a peer's raw device pointer, which has no cross-node meaning
+> regardless of transport. For cross-node with these torch ops, use the
+> host-initiated NVSHMEM ops above. Cross-node *device-side* RDMA is possible via
+> IBGDA + a custom NVSHMEM device kernel — see below.
+
+### Device-side ops (IBGDA)
+
+The host-initiated ops above run on the IBRC CPU proxy. To issue RDMA **from
+inside a CUDA kernel** cross-node (device-side / in-kernel `nvshmem_put`/`get`,
+the `nvshmemx_*_block` API), NVSHMEM needs its **IBGDA** transport. Contrary to
+an earlier assumption, IBGDA *is* reachable on this cluster **with no driver
+change**:
+
+```bash
+export NVSHMEM_REMOTE_TRANSPORT=ibrc     # keep this; ibgda is not a transport value
+export NVSHMEM_IB_ENABLE_IBGDA=1         # the actual enable knob (nvshmem-info -a)
+```
+
+What happens on init:
+
+- The GPU-rings-doorbell path fails its UAR map — `WARN: cudaHostRegister with
+  IoMemory failed error=800` / `ibgda_nic_mem_gpu_map failed` — because
+  `PeerMappingOverride` is not set on the driver. **These are non-fatal WARNs.**
+- This NVSHMEM build has `NVSHMEM_IBGDA_NIC_HANDLER: auto` and **auto-falls-back
+  to the CPU doorbell handler**: the GPU builds WQEs in GPU-memory queues, a CPU
+  thread rings the NIC doorbell.
+- IBGDA then binds on both PEs (`IBGDA: device used mlx5_5`), registers the GPU
+  symmetric heap via `ibv_reg_dmabuf_mr`, and cross-node transfers work.
+
+Verified with `nvshmem_device_put.cu` (2 nodes, DRA bus-pinned rail): a CUDA *kernel* issues
+cross-node RDMA itself (`nvshmem_int_p` device-side, UID-bootstrap over the shared PVC),
+bidirectional PASS. The debug log from that run shows the full path — the `error=800` WARN, the
+`We may need to use the CPU fallback path` message, then `IBGDA: device used mlx5_5` binding on both
+PEs. This is the device-initiated path the torch host-proxy ops can't exercise; build/run
+instructions are in the file header.
+
+To iterate on this interactively you need a **persistent** 2-pod, symmetrically-placed lab (a
+TrainJob's pods GC too fast to `oc exec` into). Stand one up with
+`../distributed-tests/submit-job.py --lab`: it runs the DRA bus-picker so both pods land on the same
+PIX rail, then deploys the lab in any namespace (`./submit-job.py -n <ns> --lab --bucket 2gpu`). See
+[`../distributed-tests/README.md`](../distributed-tests/README.md#persistent-lab---lab).
+
+Both pods share the RWX dev PVC, so build `nvshmem_device_put.cu` once and run rank 0/1 across them.
+
+> **Torch caveat:** `torch.distributed._symmetric_memory` only exposes host/stream-proxy
+> collectives and the NVLink-only peer-pointer ops — it has **no** in-kernel `nvshmem_put`/`get`.
+> To use device-side cross-node RDMA you drop to the raw NVSHMEM device API in your own `.cu`
+> (as in `nvshmem_device_put.cu`).
+
+> **GPU-autonomous doorbell (optional, disruptive):** the runs above use the **CPU doorbell
+> handler** fallback (GPU builds WQEs, a CPU thread rings the NIC doorbell). To let the GPU ring its
+> own doorbell (lower latency), the driver needs `NVreg_RegistryDwords="PeerMappingOverride=1"`,
+> which forces a **driver-daemonset rollout across all shared GPU nodes** (kills every GPU
+> workload). It is an optimization, **not** required for IBGDA to function, and it only helps if the
+> IBM VSI hypervisor permits sibling GPU→NIC P2P MMIO. Full plan + verification gate:
+> [`PEERMAPPING_ROLLOUT.md`](PEERMAPPING_ROLLOUT.md). `nvidia_peermem` is still not an option (see
+> the note above); IBGDA's dma-buf registration and the CPU-handler fallback do not need it.
+
+### NVLink intra-node device ops
+
+The other device-side family — torch's in-kernel peer-pointer ops (`get_buffer`,
+`one_shot_all_reduce`, `two_shot_all_reduce_`, `multimem_all_reduce_`) — work **intra-node over
+NVLink** (they can't cross nodes; that's the IBGDA/custom-kernel path above). Verified on a
+single-node 2-GPU pod (`nvlink-lab.yml`, DRA `gpu-2` claim → GPU0↔GPU1 = `NV18`): all four pass
+(`test_symmem_nvlink.py` → `ALL DONE (ALL PASS)`), including `multimem` (NVLink SHARP multicast).
 
 ### Device pinning (avoids `TeamManager` error)
 
@@ -221,7 +290,7 @@ calls `os._exit(0)` after printing results to skip the crashing finalizer, so
 |---|---|
 | `ibv_reg_mr(0x...) Bad address` → SIGSEGV | You're on the `ucx` transport. Set `NVSHMEM_REMOTE_TRANSPORT=ibrc`. |
 | `INIT->RTR failed ... Connection timed out` | Multiple NICs in `NVSHMEM_HCA_LIST`, or `master_addr` on the mgmt net. Use `mlx5_0:1` and a fabric IP. |
-| `cudaHostRegister IoMemory error=800` / `ibgda_nic_mem_gpu_map failed` | You enabled `ibgda`. Not supported here — use `ibrc`. |
+| `cudaHostRegister IoMemory error=800` / `ibgda_nic_mem_gpu_map failed` | Non-fatal **WARN** with `NVSHMEM_IB_ENABLE_IBGDA=1`: the GPU can't map the NIC UAR (no `PeerMappingOverride`), so NVSHMEM auto-falls-back to the CPU doorbell handler and IBGDA still comes up. See [Device-side ops (IBGDA)](#device-side-ops-ibgda). Only a problem if you expected the fully GPU-autonomous doorbell path. |
 | `Cannot get buffer across nodes` / `cudaErrorIllegalAddress` | App used `get_buffer` / `one_shot_all_reduce` cross-node. Use host-initiated NVSHMEM ops. |
 | `Detected use of TeamManager on multiple devices` | Missing device pinning. Add `device_id=` + `with torch.cuda.device(dev)`. |
 | `Timed out ... waiting for clients` at rendezvous | Nodes started >90s apart. Launch them near-simultaneously (node 1 first). |

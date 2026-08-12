@@ -21,7 +21,7 @@ orchestrator against its own dev PVC** — you provide the namespace, they do th
 | Script | Role |
 |---|---|
 | **`setup-orchestrator.py`** | One-time per-namespace setup (arg-driven). Creates the ServiceAccount, binds the SCC, builds the entrypoint ConfigMap, and installs the three **`TrainingRuntime`s** with that namespace's PVC/image baked in. |
-| **`submit-job.py`** | Per-run job submission (interactive; flags suppress prompts). Publishes your test script, runs the DRA bus-picker to stamp the symmetric `ResourceClaimTemplate`, and applies a `TrainJob`. |
+| **`submit-job.py`** | Per-run job submission (interactive; flags suppress prompts). Publishes your test script, runs the DRA bus-picker to stamp the symmetric `ResourceClaimTemplate`, and applies a `TrainJob`. With `--lab` it instead stands up a persistent per-node debugging lab (see [Persistent lab](#persistent-lab---lab)). |
 
 Because a PVC is only mountable from its own namespace, the runtime is a **namespaced
 `TrainingRuntime`** (one per namespace), so multiple users can run side by side without collisions.
@@ -113,7 +113,8 @@ default `--pull-secret rh-ee-sampark-dev-bot-pull-secret`; it warns if the secre
 | File | Purpose |
 |---|---|
 | `setup-orchestrator.py` | **Setup driver** — provisions a namespace (SA, SCC, entrypoint CM, 3 `TrainingRuntime`s). |
-| `submit-job.py` | **Submit driver** — interactive; publishes the test script, picks symmetric buses, launches a `TrainJob`. |
+| `submit-job.py` | **Submit driver** — interactive; publishes the test script, picks symmetric buses, launches a `TrainJob` (or, with `--lab`, a persistent lab). |
+| `lab.py` | The `--lab` mode of `submit-job.py`: renders/applies a persistent per-node lab `Deployment` (reuses `submit-job.py`'s bus-picker + helpers). |
 | `rendezvous-entrypoint-podnet.sh` | Pod-network rendezvous wrapper baked into the pods (execs `railguard.py` → `torchrun`). |
 | `railguard.py` | Per-rank NVSHMEM rail pinner (`NVSHMEM_HCA_LIST` = the GPU's PIX rail). |
 
@@ -195,6 +196,51 @@ world_size=2  backend=NVSHMEM/ibrc
 [broadcast]   PASS
 ALL DONE (cross-node NVSHMEM RDMA verified)
 ```
+
+## Persistent lab (`--lab`)
+
+A `TrainJob` runs to completion and its pods are garbage-collected — great for a test, useless for
+sitting inside a shell iterating on NVSHMEM/IBGDA env vars, rebuilding a `.cu`, and re-reading
+`NVSHMEM_DEBUG` output. For that, pass `--lab`: instead of a `TrainJob`, `submit-job.py` stands up a
+**long-lived per-node `Deployment`** (sleep-infinity pods, one per node) that you `oc exec` into.
+
+It reuses the exact same machinery as a job launch — the DRA bus-picker stamps the bucket's
+symmetric `ResourceClaimTemplate`, so both lab pods pin the **same buses → same board → same PIX
+rail** (see *Symmetric GPU placement* above) — and mounts the same dev PVC at `/home/devuser`, with
+RDMA (`rdma_shared_device_a`) + `IPC_LOCK`. The lab-specific rendering lives in `lab.py`.
+
+```bash
+# stand up a 2-node lab (1 GPU/pod), one pod per node:
+./submit-job.py -n <namespace> --lab --bucket 2gpu
+
+# common overrides:
+./submit-job.py -n <namespace> --lab \
+    --bucket 4gpu \                 # 2gpu | 4gpu | 8gpu (GPUs per pod)
+    --job-name nvshmem-lab \        # Deployment name (default nvshmem-lab)
+    --pvc pytorch-py3-10-<ns> \     # dev PVC to mount (default; override for a different one)
+    --replicas 2 \                  # pod count (default --min-nodes; one pod per node)
+    --dry-run                       # print the RCT + Deployment, apply nothing
+```
+
+Then work in it, and tear it down when done:
+
+```bash
+oc -n <namespace> get pods -l app=nvshmem-lab -o wide
+oc -n <namespace> exec -it deploy/nvshmem-lab -- bash     # a shell on one pod
+oc -n <namespace> delete deployment nvshmem-lab           # release the GPUs
+```
+
+The two lab pods share the RWX dev PVC, so a file you drop or build on one (e.g.
+[`../nvshmem/nvshmem_device_put.cu`](../nvshmem/nvshmem_device_put.cu)) is visible to the other —
+copy/build once, then run rank 0 on one pod and rank 1 on the other.
+
+> **Prereq (same as a job):** `./setup-orchestrator.py --namespace <ns>` must have run first — the
+> lab reuses that namespace's ServiceAccount/SCC and entrypoint ConfigMap. `submit-job.py --lab`
+> fails fast with a clear message if they're missing.
+>
+> Re-running `--lab` re-stamps the RCT and updates the `Deployment` in place. Deleting/re-stamping
+> the template does **not** disturb GPUs a running lab already holds, but re-stamping to *new* buses
+> won't migrate live pods — `oc delete deployment <lab>` first if you need a different placement.
 
 ## How the cross-node rendezvous works
 

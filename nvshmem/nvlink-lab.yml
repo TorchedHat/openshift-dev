@@ -1,0 +1,69 @@
+# Single-node 2-GPU NVLink lab (skpark-rh) for the intra-node device-side symmetric-memory ops.
+# One pod, 2 GPUs on the SAME node via the DRA gpu-2 claim (ExactCount:2 -> both land on the pod's
+# node -> NVLink-connected). No RDMA / hostNetwork needed: these ops never leave the node.
+#
+#   oc apply -f nvshmem/nvlink-lab.yml
+#   oc -n skpark-rh get pods -l app=nvlink-lab -o wide
+#   POD=$(oc -n skpark-rh get pod -l app=nvlink-lab -o name | head -1)
+#   oc -n skpark-rh cp nvshmem/test_symmem_nvlink.py ${POD#pod/}:/home/devuser/test_symmem_nvlink.py
+#   oc -n skpark-rh exec ${POD#pod/} -c lab -- bash -lc '
+#     export PATH=/home/devuser/miniconda/bin:$PATH
+#     cd /home/devuser && torchrun --standalone --nnodes=1 --nproc_per_node=2 test_symmem_nvlink.py'
+#
+# Cleanup:  oc delete -f nvshmem/nvlink-lab.yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nvlink-lab
+  namespace: skpark-rh
+  labels:
+    app: nvlink-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nvlink-lab
+  template:
+    metadata:
+      labels:
+        app: nvlink-lab
+    spec:
+      serviceAccountName: torch-cross-node
+      imagePullSecrets:
+        - name: rh-ee-sampark-dev-bot-pull-secret
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 0
+        fsGroupChangePolicy: OnRootMismatch
+      resourceClaims:
+        - name: gpus
+          resourceClaimTemplateName: gpu-2          # 2 GPUs, same node -> NVLink
+      containers:
+        - name: lab
+          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c", "sleep infinity"]
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          resources:
+            requests:
+              cpu: "4"
+              memory: 32Gi
+            limits:
+              cpu: "8"
+              memory: 64Gi
+            claims:
+              - name: gpus
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /home/devuser
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: pytorch-eco-data
+          persistentVolumeClaim:
+            claimName: pytorch-py3-10-skpark-rh
+        - name: dshm
+          emptyDir:
+            medium: Memory

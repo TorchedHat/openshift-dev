@@ -17,6 +17,15 @@ run (namespace, test-script path, GPU bucket, image, job name), then does the wh
 The runtime it targets is the namespaced TrainingRuntime, and everything is derived from --namespace,
 so any namespace can submit jobs against its own dev PVC.
 
+PERSISTENT LAB (--lab)
+----------------------
+For interactive NVSHMEM/IBGDA debugging (TrainJob pods GC too fast), pass --lab to stand up a
+long-lived per-node Deployment instead of a TrainJob: sleep-infinity pods, one per node, each
+pinned to the SAME symmetric DRA buses (via the same picker), with RDMA + IPC_LOCK and the dev PVC
+at /home/devuser. Exec in and iterate by hand. The lab-specific logic lives in lab.py.
+    ./submit-job.py -n <ns> --lab --bucket 2gpu
+Clean up with:  oc -n <ns> delete deployment <lab-name>
+
 PREREQUISITE: run  ./setup-orchestrator.py --namespace <ns>  once for the namespace first.
 
 INTERACTIVE vs SCRIPTABLE
@@ -246,7 +255,19 @@ def main():
     ap.add_argument("--buckets-order", default=None, help="comma bus-ID priority order for the picker")
     ap.add_argument("--dry-run", action="store_true", help="show matrix/pick/manifest, change nothing")
     ap.add_argument("--yes", "-y", action="store_true", help="don't prompt to confirm before launch")
+    # --- persistent lab (see lab.py) ---
+    ap.add_argument("--lab", action="store_true",
+                    help="stand up a persistent per-node NVSHMEM/IBGDA lab (Deployment) instead of a TrainJob")
+    ap.add_argument("--pvc", default=None, help="[--lab] dev PVC to mount (default pytorch-py3-10-<ns>)")
+    ap.add_argument("--replicas", type=int, default=None,
+                    help="[--lab] lab pod count (default --min-nodes; one pod per node)")
     args = ap.parse_args()
+
+    # --lab: hand off to the persistent-lab path (its own inputs; no test script / TrainJob).
+    if args.lab:
+        import lab
+        lab.submit_lab(args, sys.modules[__name__])
+        return
 
     # Gather inputs — flags win; otherwise prompt (interactive) or default (piped stdin).
     ns = args.namespace or prompt("Namespace", required=True)
