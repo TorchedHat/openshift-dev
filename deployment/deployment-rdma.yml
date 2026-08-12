@@ -161,6 +161,7 @@ spec:
         runAsUser: 1000
         runAsGroup: 0
         fsGroup: 0
+        fsGroupChangePolicy: OnRootMismatch
       imagePullSecrets:
         - name: rh-ee-sampark-dev-bot-pull-secret
       schedulerName: default-scheduler
