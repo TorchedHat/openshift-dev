@@ -6,11 +6,22 @@ metadata:
 data:
   configure_data_dir.sh: |
     #!/bin/bash
+    # Fast-path skip so pods don't re-run the full rsync + find walks over the
+    # CephFS-backed home on every start. Prefer the image build-id (auto-resyncs
+    # when the image changes); if the image ships none, fall back to a plain
+    # first-run sentinel (delete /mnt/data/.init-done or the PVC to force a resync).
     IMAGE_ID=$(cat /home/devuser/.image-build-id 2>/dev/null)
     MARKER="/mnt/data/.image-build-id"
+    SENTINEL="/mnt/data/.init-done"
 
-    if [ -n "$IMAGE_ID" ] && [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$IMAGE_ID" ]; then
-      exit 0
+    if [ -n "$IMAGE_ID" ]; then
+      if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$IMAGE_ID" ]; then
+        exit 0
+      fi
+    else
+      if [ -f "$SENTINEL" ]; then
+        exit 0
+      fi
     fi
 
     rsync -a --ignore-existing --no-owner --no-group \
@@ -33,4 +44,6 @@ data:
     find /mnt/data -type d -exec test -d '{}/.git' \; -prune -o \
       -path '*/bin/*' -type f ! -executable -print0 2>/dev/null | xargs -0 -r chmod +x 2>/dev/null || true
 
-    echo "$IMAGE_ID" > "$MARKER"
+    # Record what we synced so the next pod start can skip the work above.
+    [ -n "$IMAGE_ID" ] && echo "$IMAGE_ID" > "$MARKER"
+    touch "$SENTINEL"
