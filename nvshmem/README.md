@@ -151,6 +151,23 @@ Use the node's RDMA-fabric IP (`10.x.0.0/16`), **not** the pod/host IP
 (`10.241.129.x`), which is firewalled for arbitrary ports. See
 [`../rdma/README.md`](../rdma/README.md#connect-over-the-rdma-fabric-not-the-management-network).
 
+### Symmetric GPU placement (rail-optimized fabric)
+
+The 8 mlx5 HCAs are **isolated rails** and GPUDirect only works when a GPU is PIX to its
+NIC. A correct cross-node collective therefore needs both ranks with a given `local_rank` on
+the **same physical GPU board position** on both nodes → same PIX rail. Asymmetric placement
+(node 0 on board A, node 1 on board B) causes silent, one-directional RDMA loss even though
+`init` and rendezvous succeed.
+
+These reference pods request GPUs via the classic `nvidia.com/gpu: 2` device plugin, which does
+**not** guarantee the two nodes get matching board positions — so `NVSHMEM_HCA_LIST=mlx5_0:1`
+(one shared rail) is what keeps them symmetric here, and it holds only while both pods happen to
+be scheduled on the same board indices. For guaranteed symmetry (and per-rank rail pinning
+instead of one shared rail), use the DRA bus-pinning orchestrator in
+[`../distributed-tests/README.md`](../distributed-tests/README.md#symmetric-gpu-placement-why-dra):
+it pins each rank to an identical `pciBusID` across nodes → same board → same PIX rail by
+construction.
+
 ### Host-initiated ops only (application requirement)
 
 `hdl.get_buffer(peer)` and the `one_shot_all_reduce` / `two_shot_all_reduce` /
