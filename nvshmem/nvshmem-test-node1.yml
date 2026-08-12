@@ -1,7 +1,22 @@
-# NVSHMEM cross-node test pod — NODE 1.
-# Pinned to worker-3-v72kj (mlx5_0 fabric IP 10.7.0.6). It rendezvous-dials
-# node 0's fabric IP (10.7.0.4). Identical to node0 except name + nodeName.
-# See README.md.
+# NVSHMEM cross-node test pod — NODE 1.  (allin's legacy host-initiated test)
+# Pinned to worker-3-v72kj (mlx5_0 fabric IP 10.7.0.6). It rendezvous-dials node 0's fabric IP
+# (10.7.0.4). Identical to node0 except name + node affinity. See README.md (and node0 header for
+# why this uses a DRA `gpu-2` claim + nodeAffinity instead of `nvidia.com/gpu: 2` + `nodeName`).
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: gpu-2
+  namespace: default
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            allocationMode: ExactCount
+            count: 2
+            deviceClassName: gpu.nvidia.com
+---
 kind: Deployment
 apiVersion: apps/v1
 metadata:
@@ -17,9 +32,20 @@ spec:
       labels:
         app: nvshmem-test-node1
     spec:
-      nodeName: pytorch-openshift-tjqvv-worker-3-v72kj
+      # Pin to v72kj via nodeAffinity (NOT nodeName — see node0 header).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["pytorch-openshift-tjqvv-worker-3-v72kj"]
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: gpu-2
       containers:
         - name: container
           image: 'quay.io/rh-ee-allin/devcontainer-cuda:py3.12'
@@ -30,13 +56,13 @@ spec:
             requests:
               cpu: '4'
               memory: 64Gi
-              nvidia.com/gpu: '2'
               rdma/rdma_shared_device_a: '1'
             limits:
               cpu: '16'
               memory: 128Gi
-              nvidia.com/gpu: '2'
               rdma/rdma_shared_device_a: '1'
+            claims:
+              - name: gpu
           env:
             - name: NCCL_IB_DISABLE
               value: "0"

@@ -1,14 +1,36 @@
-# NVSHMEM cross-node test pod — NODE 0 / master.
+# NVSHMEM cross-node test pod — NODE 0 / master.  (allin's legacy host-initiated test)
 # Pinned to worker-3-s4fxf, whose mlx5_0 fabric IP is 10.7.0.4 (== MASTER_ADDR).
-# Mirror of node1 with a different nodeName; see README.md.
+# Mirror of node1 with a different node affinity; see README.md.
 #
-# Requirements this spec provides (all needed for NVSHMEM/IBRC over RoCE):
+# GPUs come via DRA, NOT the classic device plugin: `nvidia.com/gpu` allocatable is 0 on this
+# cluster (the NVIDIA DRA driver is the sole allocator), so a classic `nvidia.com/gpu: 2` request
+# would never schedule. This file therefore also defines a `default`-namespace ResourceClaimTemplate
+# (`gpu-2`) giving 2 GPUs on the pod's node. Node pinning uses nodeAffinity, NOT `nodeName`:
+# `spec.nodeName` bypasses the scheduler, so the DRA claim is never allocated and the pod hangs in
+# ContainerCreating. `oc apply` is idempotent, so applying both node0 and node1 (each carries an
+# identical `gpu-2` template) is fine.
+#
+# Other requirements (all needed for NVSHMEM/IBRC over RoCE):
 #   * hostNetwork: true                     -> host RDMA-fabric netdevs / IPs visible
 #   * rdma/rdma_shared_device_a: 1           -> injects /dev/infiniband/* verbs devices
 #   * securityContext capabilities: IPC_LOCK -> allow pinning/registering RDMA memory
-#   * nvidia.com/gpu: 2                       -> 2 ranks/node in the example
-# The container IMAGE must additionally provide a PyTorch build with the
-# symmetric_memory NVSHMEM backend and the NVSHMEM runtime lib (libnvshmem*).
+# The container IMAGE must additionally provide a PyTorch build with the symmetric_memory NVSHMEM
+# backend and the NVSHMEM runtime lib (libnvshmem*).
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: gpu-2
+  namespace: default
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            allocationMode: ExactCount
+            count: 2
+            deviceClassName: gpu.nvidia.com
+---
 kind: Deployment
 apiVersion: apps/v1
 metadata:
@@ -24,9 +46,20 @@ spec:
       labels:
         app: nvshmem-test-node0
     spec:
-      nodeName: pytorch-openshift-tjqvv-worker-3-s4fxf
+      # Pin to s4fxf via nodeAffinity (NOT nodeName — see header: nodeName breaks DRA allocation).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["pytorch-openshift-tjqvv-worker-3-s4fxf"]
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: gpu-2
       containers:
         - name: container
           image: 'quay.io/rh-ee-allin/devcontainer-cuda:py3.12'
@@ -37,13 +70,13 @@ spec:
             requests:
               cpu: '4'
               memory: 64Gi
-              nvidia.com/gpu: '2'
               rdma/rdma_shared_device_a: '1'
             limits:
               cpu: '16'
               memory: 128Gi
-              nvidia.com/gpu: '2'
               rdma/rdma_shared_device_a: '1'
+            claims:
+              - name: gpu
           env:
             - name: NCCL_IB_DISABLE
               value: "0"
