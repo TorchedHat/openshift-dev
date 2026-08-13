@@ -1,0 +1,124 @@
+# DRA GPU -> owning-pod mapper. Publishes `gpu_claim_pod` so the GPU dashboard can restore
+# per-user attribution lost when GPUs moved from the device plugin to DRA. See mapper.py for
+# the why/how, and README.md for the deploy steps (the source ConfigMap is created from
+# mapper.py with `oc create configmap`, so this file does not embed the script).
+#
+# Prereq: user-workload monitoring enabled, so the ServiceMonitor below is scraped and the
+# metric federates into the same thanos-querier the Grafana datasource already points at.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dra-gpu-mapper
+  namespace: grafana
+---
+# Cluster-scoped read of ResourceClaims (claim -> pod/node/device) and ResourceSlices
+# (device -> GPU UUID, the DCGM join key) in every namespace. No secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dra-gpu-mapper
+rules:
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceclaims", "resourceslices"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dra-gpu-mapper
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dra-gpu-mapper
+subjects:
+  - kind: ServiceAccount
+    name: dra-gpu-mapper
+    namespace: grafana
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dra-gpu-mapper
+  namespace: grafana
+  labels:
+    app: dra-gpu-mapper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dra-gpu-mapper
+  template:
+    metadata:
+      labels:
+        app: dra-gpu-mapper
+    spec:
+      serviceAccountName: dra-gpu-mapper
+      containers:
+        - name: mapper
+          # Public UBI python (no pull secret needed); the app is pure stdlib.
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          command: ["python", "/app/mapper.py"]
+          ports:
+            - name: metrics
+              containerPort: 8000
+          env:
+            - name: POLL_SECONDS
+              value: "15"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: src
+              mountPath: /app
+      volumes:
+        - name: src
+          configMap:
+            name: dra-gpu-mapper-src
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dra-gpu-mapper
+  namespace: grafana
+  labels:
+    app: dra-gpu-mapper
+spec:
+  selector:
+    app: dra-gpu-mapper
+  ports:
+    - name: metrics
+      port: 8000
+      targetPort: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dra-gpu-mapper
+  namespace: grafana
+  labels:
+    app: dra-gpu-mapper
+spec:
+  selector:
+    matchLabels:
+      app: dra-gpu-mapper
+  endpoints:
+    - port: metrics
+      interval: 30s

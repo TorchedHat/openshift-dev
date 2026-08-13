@@ -83,7 +83,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_GPU_UTIL{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE=\"\"}",
+          "expr": "DCGM_FI_DEV_GPU_UTIL{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "A"
         },
@@ -92,7 +92,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_PROF_GR_ENGINE_ACTIVE{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * 100",
+          "expr": "DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 100",
           "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "B"
         }
@@ -167,7 +167,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_GPU_UTIL{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE=\"\"}",
+          "expr": "DCGM_FI_DEV_GPU_UTIL{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "A"
         },
@@ -176,7 +176,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_PROF_GR_ENGINE_ACTIVE{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * 100",
+          "expr": "DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 100",
           "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "B"
         }
@@ -256,7 +256,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE=\"\"}",
+          "expr": "DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "A"
         },
@@ -265,7 +265,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"}",
+          "expr": "DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "B"
         }
@@ -338,7 +338,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE=\"\"}",
+          "expr": "DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "Used GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "A"
         },
@@ -347,7 +347,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"}",
+          "expr": "DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "Used GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "B"
         },
@@ -356,7 +356,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_FREE{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE=\"\"}",
+          "expr": "DCGM_FI_DEV_FB_FREE{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "Free GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "C"
         },
@@ -365,7 +365,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_FREE{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"}",
+          "expr": "DCGM_FI_DEV_FB_FREE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "Free GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "D"
         }
@@ -446,7 +446,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_GPU_TEMP{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\"}",
+          "expr": "DCGM_FI_DEV_GPU_TEMP{gpu=~\"$gpu\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "A"
         }
@@ -519,7 +519,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_POWER_USAGE{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\"}",
+          "expr": "DCGM_FI_DEV_POWER_USAGE{gpu=~\"$gpu\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
           "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "A"
         }
@@ -604,7 +604,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_SM_CLOCK{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * 1000000",
+          "expr": "DCGM_FI_DEV_SM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 1000000",
           "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "A"
         },
@@ -613,7 +613,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_SM_CLOCK{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * 1000000",
+          "expr": "DCGM_FI_DEV_SM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 1000000",
           "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "B"
         }
@@ -686,7 +686,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_MEM_CLOCK{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * 1000000",
+          "expr": "DCGM_FI_DEV_MEM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 1000000",
           "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "A"
         },
@@ -695,7 +695,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_MEM_CLOCK{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\", gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * 1000000",
+          "expr": "DCGM_FI_DEV_MEM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 1000000",
           "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
           "refId": "B"
         }
@@ -717,10 +717,10 @@
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
         },
-        "definition": "label_values(DCGM_FI_PROF_GR_ENGINE_ACTIVE, exported_namespace)",
+        "definition": "label_values(gpu_claim_pod, exported_namespace)",
         "name": "namespace",
         "query": {
-          "query": "label_values(DCGM_FI_PROF_GR_ENGINE_ACTIVE, exported_namespace)",
+          "query": "label_values(gpu_claim_pod, exported_namespace)",
           "refId": "A"
         },
         "refresh": 2,
@@ -735,10 +735,10 @@
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
         },
-        "definition": "label_values(DCGM_FI_PROF_GR_ENGINE_ACTIVE{exported_namespace=~\"$namespace\"}, exported_pod)",
+        "definition": "label_values(gpu_claim_pod{exported_namespace=~\"$namespace\"}, exported_pod)",
         "name": "pod",
         "query": {
-          "query": "label_values(DCGM_FI_PROF_GR_ENGINE_ACTIVE{exported_namespace=~\"$namespace\"}, exported_pod)",
+          "query": "label_values(gpu_claim_pod{exported_namespace=~\"$namespace\"}, exported_pod)",
           "refId": "A"
         },
         "refresh": 2,
@@ -775,5 +775,5 @@
   "timezone": "browser",
   "title": "NVIDIA GPU Monitoring",
   "uid": "nvidia-gpu-dcgm",
-  "version": 4
+  "version": 5
 }
