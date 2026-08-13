@@ -84,6 +84,11 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # Auto-clean finished runs: the TTL controller deletes each Job 1h after it finishes,
+      # cascade-deleting its Completed pods so they don't pile up between runs. History limits
+      # above still cap retained Jobs; this reaps them sooner (well before the next 6h run) while
+      # leaving a 1h window to inspect logs of the most recent run.
+      ttlSecondsAfterFinished: 3600
       completions: 3               # == GPU node count (see NODE COUNT note above)
       parallelism: 3               # == GPU node count
       activeDeadlineSeconds: 1800  # bound a run (e.g. if a node is unschedulable)
