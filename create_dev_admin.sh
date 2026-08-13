@@ -32,11 +32,9 @@ NAMESPACE=$(echo "$USERNAME" | tr '[:upper:]' '[:lower:]')
 # create namespace for the user
 oc apply -f <(sed "s/<username>/$NAMESPACE/g" namespace.yml)
 
-# Apply anyuid to bypass SCC.
-oc adm policy add-scc-to-user anyuid -z default -n $NAMESPACE
-
-# Allow hostNetwork for UCX-based RDMA workloads (vLLM/NIXL, OpenMPI).
-oc adm policy add-scc-to-user hostnetwork -z default -n $NAMESPACE
+# Grant the namespace's SCCs from a single declarative file (anyuid + hostnetwork
+# on default; anyuid-ipc-lock on torch-cross-node for the RDMA orchestrator).
+oc apply -f <(sed "s/<username>/$NAMESPACE/g" scc/user-scc-bindings.yml)
 
 # Grant cluster-reader for read access to non-namespaced resources (nodes, etc.).
 oc adm policy add-cluster-role-to-user cluster-reader "$IDENTITY"

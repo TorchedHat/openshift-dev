@@ -1,0 +1,42 @@
+# Standard non-hostNetwork RDMA SCC: anyuid + IPC_LOCK (for ibv_reg_mr mlock).
+# Standardized SCC for the torch-cross-node runtime-orchestrator / submit-job
+# workloads; granted per namespace to the torch-cross-node ServiceAccount:
+#   oc adm policy add-scc-to-user anyuid-ipc-lock -z torch-cross-node -n <namespace>
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: anyuid-ipc-lock
+  annotations:
+    kubernetes.io/description: >-
+      anyuid-ipc-lock extends the anyuid SCC with IPC_LOCK capability, required
+      for RDMA memory registration (ibv_reg_mr).
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegedContainer: false
+allowPrivilegeEscalation: true
+allowedCapabilities:
+- IPC_LOCK
+defaultAddCapabilities: []
+requiredDropCapabilities:
+- MKNOD
+readOnlyRootFilesystem: false
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+fsGroup:
+  type: RunAsAny
+supplementalGroups:
+  type: RunAsAny
+volumes:
+- configMap
+- downwardAPI
+- emptyDir
+- persistentVolumeClaim
+- projected
+- secret
+users: []
+groups: []

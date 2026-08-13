@@ -1,0 +1,56 @@
+# Per-namespace SCC grants for a dev user, in declarative form -- the single-file
+# equivalent of the `oc adm policy add-scc-to-user` calls create_dev_admin.sh used
+# to run imperatively. Templated with <username> (== the namespace); apply with:
+#   oc apply -f <(sed "s/<username>/$NAMESPACE/g" scc/user-scc-bindings.yml)
+#
+# Each block is exactly what `add-scc-to-user <scc> -z <sa>` produces: a RoleBinding
+# named system:openshift:scc:<scc> to the auto-generated ClusterRole of the same
+# name (which carries `use` on that SCC). Names match so re-applying is idempotent.
+#
+#   anyuid          -> default          bypass the restricted UID range
+#   hostnetwork     -> default          hostNetwork for UCX RDMA (vLLM/NIXL, OpenMPI)
+#   anyuid-ipc-lock -> torch-cross-node IPC_LOCK for the RDMA runtime orchestrator
+#                                       (the SA is created later by setup-orchestrator.py;
+#                                        binding a not-yet-existing SA is fine)
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: system:openshift:scc:anyuid
+  namespace: <username>
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: <username>
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: system:openshift:scc:hostnetwork
+  namespace: <username>
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:hostnetwork
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: <username>
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: system:openshift:scc:anyuid-ipc-lock
+  namespace: <username>
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid-ipc-lock
+subjects:
+- kind: ServiceAccount
+  name: torch-cross-node
+  namespace: <username>

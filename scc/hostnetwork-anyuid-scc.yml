@@ -8,7 +8,7 @@ metadata:
       may run with an arbitrary fixed UID (e.g. 1000) while using host networking
       and host ports. Does NOT grant privileged containers. SETUID/SETGID are kept
       (not dropped) so setuid-root binaries such as sudo work for the non-root UID.
-      Created for qqaatw's RDMA dev container.
+      Created for RDMA dev containers that require host networking.
 # Host networking + host ports, like the built-in hostnetwork SCC
 allowHostNetwork: true
 allowHostPorts: true

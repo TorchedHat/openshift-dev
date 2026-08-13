@@ -2,7 +2,8 @@
 
 read -p "Enter username: " USERNAME
 
-# create namespace for the user
-oc delete -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
+# remove the namespace's SCC grants (same single file used to create them)
+oc delete -f <(sed "s/<username>/$USERNAME/g" scc/user-scc-bindings.yml) --ignore-not-found
 
-oc adm policy remove-scc-from-user anyuid -z default -n $USERNAME
+# delete the user's namespace (also cascades any remaining namespaced bindings)
+oc delete -f <(sed "s/<username>/$USERNAME/g" namespace.yml)
