@@ -11,11 +11,14 @@ side by side without colliding on one shared cluster-scoped object.
 
 It provisions, in the target namespace:
   1. ServiceAccount            (default: torch-cross-node)
-  2. SCC binding               (default: hostnetwork-anyuid -> the SA; grants fixed UID + IPC_LOCK)
-  3. entrypoint ConfigMap      (torch-cross-node-entrypoint-podnet: entrypoint.sh + railguard.py)
-  4. namespaced TrainingRuntimes  (torch-cross-node-{2,4,8}gpu) with the ns PVC + image + pull secret
-  5. (optional) default DRA ResourceClaimTemplates  (--with-default-rcts; submit-job.py re-stamps
+  2. entrypoint ConfigMap      (torch-cross-node-entrypoint-podnet: entrypoint.sh + railguard.py)
+  3. namespaced TrainingRuntimes  (torch-cross-node-{2,4,8}gpu) with the ns PVC + image + pull secret
+  4. (optional) default DRA ResourceClaimTemplates  (--with-default-rcts; submit-job.py re-stamps
      these to contention-free symmetric buses at launch, so they are only a convenience)
+
+It does NOT bind the SCC. Granting an SCC to the SA is a privileged, cluster-scoped action that
+namespaced (edit-level) users cannot perform, so it is a one-time cluster-admin PREREQUISITE (see
+WHERE TO RUN); this script only reports whether it is already in place.
 
 Submit jobs afterwards with the interactive `submit-job.py`.
 
@@ -27,16 +30,23 @@ INPUTS
      --image         dev container image          (default: quay.io/rh-ee-sampark/devcontainers:py3.10)
      --pull-secret   image pull secret name       (default: rh-ee-sampark-dev-bot-pull-secret)
      --sa            ServiceAccount name          (default: torch-cross-node)
-     --scc           SecurityContextConstraints   (default: hostnetwork-anyuid)
+     --scc           SecurityContextConstraints   (default: anyuid-ipc-lock)
      --buckets       which runtimes to install     (default: 2gpu,4gpu,8gpu)
      --with-default-rcts    also create default symmetric ResourceClaimTemplates
      --dry-run       print rendered manifests, apply nothing
 
 WHERE TO RUN: anywhere with `oc` logged in + python3 (stdlib only). The identity needs, in the
 target namespace: create serviceaccount / configmap / trainingruntime (+ resourceclaimtemplate if
---with-default-rcts), and `oc adm policy add-scc-to-user` (cluster-admin or an equivalent grant).
+--with-default-rcts) -- all ordinary namespaced (edit-level) permissions. No cluster-admin required.
+
+PREREQUISITE (cluster-admin, one-time per SA -- NOT done by this script): bind the SCC that grants
+the fixed non-root UID + IPC_LOCK (for ibv_reg_mr mlock) the RDMA pods need --
+    oc adm policy add-scc-to-user <scc> -z <sa> -n <ns>
+Until an admin has run it, the TrainJob pods stay blocked by SCC admission. This script reports the
+status of the grant but cannot perform it (a namespaced user has no privilege to bind an SCC).
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -44,7 +54,7 @@ import sys
 IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.10"
 PULL_SECRET = "rh-ee-sampark-dev-bot-pull-secret"
 SA = "torch-cross-node"
-SCC = "hostnetwork-anyuid"
+SCC = "anyuid-ipc-lock"
 ENTRYPOINT_CM = "torch-cross-node-entrypoint-podnet"
 
 # bucket -> GPUs per pod (== numProcPerNode; numNodes is always 2) + the DRA claim template it
@@ -257,19 +267,34 @@ def main():
             sys.stderr.write(f"WARNING: pull secret '{args.pull_secret}' not found in {ns}; image "
                              f"pulls may fail. Copy it into the namespace or pass --pull-secret.\n")
 
+    # SCC prerequisite -- NOT applied here. Binding an SCC to the SA is a privileged, cluster-scoped
+    # action (`oc adm policy add-scc-to-user`) that namespaced users cannot perform, so it's left to a
+    # cluster-admin as a one-time grant. Best-effort status report only; never fatal, never mutating.
+    grant_cmd = f"oc adm policy add-scc-to-user {args.scc} -z {args.sa} -n {ns}"
+    granted = False
+    if not args.dry_run:
+        raw = sh("oc", "-n", ns, "get", "rolebinding", f"system:openshift:scc:{args.scc}",
+                 "--ignore-not-found", "-o", "json", check=False)
+        try:
+            granted = any(s.get("kind") == "ServiceAccount" and s.get("name") == args.sa
+                          and s.get("namespace", ns) == ns
+                          for s in (json.loads(raw).get("subjects") or []))
+        except (ValueError, AttributeError):
+            granted = False          # binding absent, or no permission to read it -> just remind
+    if granted:
+        info(f"SCC prerequisite: {args.scc} already bound to {args.sa} (ok)")
+    else:
+        info(f"SCC prerequisite NOT confirmed -- a cluster-admin must run this ONCE (namespaced "
+             f"users can't):\n    {grant_cmd}\n  ...or the TrainJob pods stay blocked by SCC. "
+             f"Continuing with the namespaced setup.")
+    info("")
+
     # 1) ServiceAccount
     sa_yaml = f"apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: {args.sa}\n  namespace: {ns}\n"
     apply(sa_yaml, args.dry_run)
-    info(f"[1/5] ServiceAccount/{args.sa}")
+    info(f"[1/4] ServiceAccount/{args.sa}")
 
-    # 2) SCC binding (grants fixed non-root UID + IPC_LOCK for ibv_reg_mr mlock; hostNetwork unused)
-    if args.dry_run:
-        info(f"# oc adm policy add-scc-to-user {args.scc} -z {args.sa} -n {ns}")
-    else:
-        sh("oc", "adm", "policy", "add-scc-to-user", args.scc, "-z", args.sa, "-n", ns)
-    info(f"[2/5] SCC {args.scc} -> {args.sa}")
-
-    # 3) entrypoint ConfigMap (wrapper + railguard, mounted at /opt/rz)
+    # 2) entrypoint ConfigMap (wrapper + railguard, mounted at /opt/rz)
     ep = os.path.join(HERE, "rendezvous-entrypoint-podnet.sh")
     rg = os.path.join(HERE, "railguard.py")
     for f in (ep, rg):
@@ -283,22 +308,22 @@ def main():
                 f"--from-file=entrypoint.sh={ep}", f"--from-file=railguard.py={rg}",
                 "-n", ns, "--dry-run=client", "-o", "yaml")
         sh("oc", "apply", "-f", "-", input=cm)
-    info(f"[3/5] ConfigMap/{ENTRYPOINT_CM}")
+    info(f"[2/4] ConfigMap/{ENTRYPOINT_CM}")
 
-    # 4) namespaced TrainingRuntimes
+    # 3) namespaced TrainingRuntimes
     for b in buckets:
         apply(runtime_yaml(b, ns, pvc, args.image, args.pull_secret, args.sa), args.dry_run)
-    info(f"[4/5] TrainingRuntimes: {', '.join('torch-cross-node-' + b for b in buckets)}")
+    info(f"[3/4] TrainingRuntimes: {', '.join('torch-cross-node-' + b for b in buckets)}")
 
-    # 5) optional default RCTs (submit-job.py re-stamps these per launch)
+    # 4) optional default RCTs (submit-job.py re-stamps these per launch)
     if args.with_default_rcts:
         buses = [norm_bus(b) for b in DEFAULT_BUSES]
         for b in buckets:
             n = BUCKETS[b]["gpus"]
             apply(rct_yaml(BUCKETS[b]["rct"], ns, buses[:n]), args.dry_run)
-        info(f"[5/5] default ResourceClaimTemplates created")
+        info(f"[4/4] default ResourceClaimTemplates created")
     else:
-        info("[5/5] skipped default RCTs (submit-job.py stamps them per launch; "
+        info("[4/4] skipped default RCTs (submit-job.py stamps them per launch; "
              "use --with-default-rcts to pre-create)")
 
     info(f"\nDone. Submit a job with:  ./submit-job.py --namespace {ns}")
