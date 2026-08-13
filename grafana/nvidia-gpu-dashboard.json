@@ -15,6 +15,166 @@
         "x": 0,
         "y": 0
       },
+      "id": 102,
+      "title": "GPU Ownership",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "description": "Claimed whole-GPUs grouped by namespace (from DRA ResourceClaims via UUID join). Idle-but-claimed GPUs still appear; unclaimed GPUs are omitted.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Util %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-GrYlRd"
+                }
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "id": 9,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Namespace",
+            "desc": false
+          }
+        ],
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "title": "GPU Ownership by Namespace",
+      "type": "table",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "expr": "label_replace((DCGM_FI_PROF_GR_ENGINE_ACTIVE{GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod) * 100, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "DCGM_FI_DRIVER_VERSION": true,
+              "UUID": true,
+              "container": true,
+              "device": true,
+              "endpoint": true,
+              "instance": true,
+              "job": true,
+              "modelName": true,
+              "namespace": true,
+              "prometheus": true,
+              "service": true,
+              "Hostname": true,
+              "GPU_I_PROFILE": true,
+              "pod": true
+            },
+            "indexByName": {
+              "exported_namespace": 0,
+              "node": 1,
+              "gpu": 2,
+              "pci_bus_id": 3,
+              "exported_pod": 4,
+              "Value": 5
+            },
+            "renameByName": {
+              "exported_namespace": "Namespace",
+              "node": "Node",
+              "gpu": "GPU",
+              "pci_bus_id": "PCI",
+              "exported_pod": "Pod",
+              "Value": "Util %"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
       "id": 100,
       "title": "GPU Utilization",
       "type": "row"
@@ -57,7 +217,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 1
+        "y": 10
       },
       "id": 1,
       "options": {
@@ -83,8 +243,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_GPU_UTIL{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"} * 100, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} @ {{node}}",
           "refId": "A"
         },
         {
@@ -92,8 +252,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 100",
-          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"} * 100, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} @ {{node}}",
           "refId": "B"
         }
       ]
@@ -142,7 +302,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 1
+        "y": 10
       },
       "id": 2,
       "options": {
@@ -167,8 +327,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_GPU_UTIL{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"} * 100, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} @ {{node}}",
           "refId": "A"
         },
         {
@@ -176,8 +336,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 100",
-          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"} * 100, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} @ {{node}}",
           "refId": "B"
         }
       ]
@@ -188,7 +348,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 18
       },
       "id": 101,
       "title": "GPU Memory",
@@ -230,7 +390,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 10
+        "y": 19
       },
       "id": 3,
       "options": {
@@ -256,8 +416,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"}, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} @ {{node}}",
           "refId": "A"
         },
         {
@@ -265,8 +425,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"}, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} @ {{node}}",
           "refId": "B"
         }
       ]
@@ -313,7 +473,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 10
+        "y": 19
       },
       "id": 4,
       "options": {
@@ -338,8 +498,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "Used GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"}, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "Used GPU {{gpu}} @ {{node}}",
           "refId": "A"
         },
         {
@@ -347,8 +507,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "Used GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"}, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "Used GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} @ {{node}}",
           "refId": "B"
         },
         {
@@ -356,8 +516,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_FREE{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "Free GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_FB_FREE{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"}, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "Free GPU {{gpu}} @ {{node}}",
           "refId": "C"
         },
         {
@@ -365,8 +525,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_FB_FREE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "Free GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_FB_FREE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"}, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "Free GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} @ {{node}}",
           "refId": "D"
         }
       ]
@@ -377,7 +537,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 27
       },
       "id": 102,
       "title": "Temperature & Power",
@@ -421,7 +581,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 28
       },
       "id": 5,
       "options": {
@@ -446,8 +606,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_GPU_TEMP{gpu=~\"$gpu\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_GPU_TEMP{gpu=~\"$gpu\", Hostname=~\".*$node\"}, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} @ {{node}}",
           "refId": "A"
         }
       ]
@@ -494,7 +654,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 28
       },
       "id": 6,
       "options": {
@@ -519,8 +679,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_POWER_USAGE{gpu=~\"$gpu\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"}",
-          "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_POWER_USAGE{gpu=~\"$gpu\", Hostname=~\".*$node\"}, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} @ {{node}}",
           "refId": "A"
         }
       ]
@@ -531,7 +691,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 36
       },
       "id": 103,
       "title": "Clock Speeds",
@@ -579,7 +739,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 37
       },
       "id": 7,
       "options": {
@@ -604,8 +764,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_SM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 1000000",
-          "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_SM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"} * 1000000, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} @ {{node}}",
           "refId": "A"
         },
         {
@@ -613,8 +773,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_SM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 1000000",
-          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_SM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"} * 1000000, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} @ {{node}}",
           "refId": "B"
         }
       ]
@@ -661,7 +821,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 37
       },
       "id": 8,
       "options": {
@@ -686,8 +846,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_MEM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 1000000",
-          "legendFormat": "GPU {{gpu}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_MEM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"} * 1000000, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} @ {{node}}",
           "refId": "A"
         },
         {
@@ -695,8 +855,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "DCGM_FI_DEV_MEM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod{exported_namespace=~\"$namespace\", exported_pod=~\"$pod\"} * 1000000",
-          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} ({{exported_namespace}}/{{exported_pod}})",
+          "expr": "label_replace(DCGM_FI_DEV_MEM_CLOCK{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"} * 1000000, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} @ {{node}}",
           "refId": "B"
         }
       ]
@@ -717,30 +877,13 @@
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
         },
-        "definition": "label_values(gpu_claim_pod, exported_namespace)",
-        "name": "namespace",
+        "definition": "label_values(DCGM_FI_PROF_GR_ENGINE_ACTIVE, Hostname)",
+        "name": "node",
         "query": {
-          "query": "label_values(gpu_claim_pod, exported_namespace)",
+          "query": "label_values(DCGM_FI_PROF_GR_ENGINE_ACTIVE, Hostname)",
           "refId": "A"
         },
-        "refresh": 2,
-        "type": "query",
-        "includeAll": true,
-        "multi": true,
-        "allValue": ".*"
-      },
-      {
-        "current": {},
-        "datasource": {
-          "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
-        },
-        "definition": "label_values(gpu_claim_pod{exported_namespace=~\"$namespace\"}, exported_pod)",
-        "name": "pod",
-        "query": {
-          "query": "label_values(gpu_claim_pod{exported_namespace=~\"$namespace\"}, exported_pod)",
-          "refId": "A"
-        },
+        "regex": "/([^-]+)$/",
         "refresh": 2,
         "type": "query",
         "includeAll": true,
