@@ -43,6 +43,8 @@ FLAGS
   --script         path to launcher-style test .py  (prompted; no default)
   --bucket         2gpu | 4gpu | 8gpu               (prompted; default 2gpu)
   --image          dev container image              (prompted; default quay.io/.../py3.10)
+  --pvc            dev PVC mounted at /home/devuser (default pytorch-py3-10-<ns>). Override when
+                   your python/torch build lives elsewhere, e.g. the legacy pytorch-ibmc-storage-<ns>.
   --job-name       TrainJob name                    (prompted; default symmem-<bucket>)
   --script-args    extra args passed to your script after its path (space-separated)
   --min-nodes      buses must be mutually free on >= N nodes  (default 2)
@@ -60,6 +62,8 @@ from itertools import combinations
 IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.10"
 TEST_CM = "cross-node-test"          # test script mounted at /workspace in the pods
 WORKSPACE = "/workspace"
+DEV_PVC_VOLUME = "pytorch-eco-data"  # the runtime's dev-home volume (mounted at /home/devuser);
+                                     # re-declare it in podTemplateOverrides to swap the PVC
 
 # bucket -> GPUs per pod + the symmetric ResourceClaimTemplate the runtime references. Must match
 # setup-orchestrator.py's BUCKETS (the runtimes reference these RCT names by hand).
@@ -207,12 +211,22 @@ def rct_yaml(name, ns, buses):
             f"{reqs}")
 
 
-def trainjob_yaml(name, ns, bucket, image, script_basename, script_args):
+def trainjob_yaml(name, ns, bucket, image, script_basename, script_args, pvc=None):
     # torchrun receives the workload path (+ optional args) as trainer.args; the entrypoint execs
     # `torchrun ... railguard.py "$@"` and railguard runpy-runs argv[1]. The script is mounted from
     # the cross-node-test ConfigMap at /workspace by the podTemplateOverrides below.
     argv = [f"{WORKSPACE}/{script_basename}"] + list(script_args)
     args_yaml = "[" + ", ".join(f'"{a}"' for a in argv) + "]"
+    # Optionally swap the runtime's dev-home PVC (mounted at /home/devuser). Trainer v2 merges
+    # podTemplateOverrides volumes BY NAME, so re-declaring DEV_PVC_VOLUME with a different
+    # claimName replaces the runtime's default. This is how a user whose python/torch build lives
+    # in a non-default PVC (e.g. the legacy pytorch-ibmc-storage-<ns>) points the pods at it --
+    # otherwise the runtime mounts pytorch-py3-10-<ns> and the image's torchrun/torch is missing.
+    pvc_volume = (f"""\
+          - name: {DEV_PVC_VOLUME}
+            persistentVolumeClaim:
+              claimName: {pvc}
+""" if pvc else "")
     return f"""\
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
@@ -236,7 +250,7 @@ spec:
           - name: test-script
             configMap:
               name: {TEST_CM}
-        containers:
+{pvc_volume}        containers:
           - name: node
             volumeMounts:
               - name: test-script
@@ -259,7 +273,10 @@ def main():
     # --- persistent lab (see lab.py) ---
     ap.add_argument("--lab", action="store_true",
                     help="stand up a persistent per-node NVSHMEM/IBGDA lab (Deployment) instead of a TrainJob")
-    ap.add_argument("--pvc", default=None, help="[--lab] dev PVC to mount (default pytorch-py3-10-<ns>)")
+    ap.add_argument("--pvc", default=None,
+                    help="dev PVC to mount at /home/devuser, overriding the runtime default "
+                         "(pytorch-py3-10-<ns>). Use when your python/torch build lives in a "
+                         "different PVC, e.g. the legacy pytorch-ibmc-storage-<ns>. Also used by --lab.")
     ap.add_argument("--replicas", type=int, default=None,
                     help="[--lab] lab pod count (default --min-nodes; one pod per node)")
     ap.add_argument("--destroy", action="store_true",
@@ -296,6 +313,7 @@ def main():
          + (f"  args={script_args}" if script_args else ""))
     info(f"  bucket      {bucket}  ({b['gpus']} GPU/pod x 2 nodes, RCT {b['rct']})")
     info(f"  image       {image}")
+    info(f"  dev PVC     {args.pvc or f'pytorch-py3-10-{ns} (runtime default)'}")
     info(f"  TrainJob    {job_name}\n")
 
     if not args.dry_run:
@@ -307,7 +325,7 @@ def main():
 
     # 1) pick symmetric buses (always shown — it's the useful pre-flight view)
     buses = pick_buses(b["gpus"], args.min_nodes, args.buckets_order)
-    tj = trainjob_yaml(job_name, ns, bucket, image, script_basename, script_args)
+    tj = trainjob_yaml(job_name, ns, bucket, image, script_basename, script_args, pvc=args.pvc)
 
     if args.dry_run:
         # stdout = the two manifests (RCT + TrainJob), so `submit ... --dry-run | oc apply -f -` works.

@@ -37,9 +37,17 @@ INPUTS
 
 WHERE TO RUN: anywhere with `oc` logged in + python3 (stdlib only). The identity needs, in the
 target namespace: create serviceaccount / configmap / trainingruntime (+ resourceclaimtemplate if
---with-default-rcts) -- all ordinary namespaced (edit-level) permissions. No cluster-admin required.
+--with-default-rcts).
 
-PREREQUISITE (cluster-admin, one-time per SA -- NOT done by this script): bind the SCC that grants
+PREREQUISITE 1 (per namespace -- done by create_dev_admin.sh via rbac.yml, NOT by this script): the
+built-in `edit` role does NOT cover the Kubeflow Trainer CRDs (trainer.kubeflow.org) -- those CRDs
+don't carry the aggregate-to-edit label -- so a plain edit user hits
+"trainingruntimes.trainer.kubeflow.org ... is forbidden" when this script creates the TrainingRuntime.
+rbac.yml's per-namespace `<username>-access` Role now grants trainjobs/trainingruntimes; new users get
+it automatically. For a namespace created before this was added, backfill it once:
+    oc apply -f <(sed -e "s/<username>/$NS/g" -e "s/<email>/$IDENTITY/g" ../rbac.yml)
+
+PREREQUISITE 2 (cluster-admin, one-time per SA -- NOT done by this script): bind the SCC that grants
 the fixed non-root UID + IPC_LOCK (for ibv_reg_mr mlock) the RDMA pods need --
     oc adm policy add-scc-to-user <scc> -z <sa> -n <ns>
 Until an admin has run it, the TrainJob pods stay blocked by SCC admission. This script reports the

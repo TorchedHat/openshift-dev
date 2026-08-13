@@ -8,6 +8,18 @@ rules:
     resources: ["secrets"]
     resourceNames: ["<username>-git-ssh-key", "<username>-gcloud-config"]
     verbs: ["get"]
+  # Cross-node TrainJob flow (distributed-tests/): the built-in `edit` role does NOT cover the
+  # Kubeflow Trainer CRDs -- those CRDs don't carry the aggregate-to-edit label -- so without this a
+  # user hits "trainingruntimes.trainer.kubeflow.org ... is forbidden" when setup-orchestrator.py
+  # creates the namespaced TrainingRuntime (and the same on trainjobs). Scoped to this one namespace.
+  - apiGroups: ["trainer.kubeflow.org"]
+    resources: ["trainjobs", "trainingruntimes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # resourceclaimtemplates (submit-job.py re-stamps the symmetric GPU claim) is already reachable via
+  # edit on this cluster; listed here so the namespace's grant fully describes what the flow needs.
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceclaimtemplates"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
