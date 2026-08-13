@@ -51,18 +51,21 @@ export NVSHMEM_REMOTE_TRANSPORT=ibrc     # NOT ucx / ibgda
 # rank's GPU to the right rail (mlx5) NIC.
 export CUDA_DEVICE_ORDER="${CUDA_DEVICE_ORDER:-PCI_BUS_ID}"
 # RoCEv2 GID is selected by ADDRESS on this NVSHMEM build (no NVSHMEM_IB_GID_INDEX). railguard
-# pins NVSHMEM_HCA_LIST and NVSHMEM_IB_ADDR_RANGE PER RANK to the rail that is PIX to that rank's
-# GPU; we only fix the address family here.
+# pins NVSHMEM_HCA_LIST and NVSHMEM_IB_ADDR_RANGE to the rail the world should use: with 1 GPU/pod
+# that is each rank's own PIX rail; with >1 GPU/pod it is a single SHARED rail (local rank 0's)
+# for the whole pod, because the rails don't route to each other and a multi-rail world can't form
+# its cross-node QP mesh. We only fix the address family here. (Override: RAILGUARD_SHARED_RAIL.)
 export NVSHMEM_IB_ADDR_FAMILY="${NVSHMEM_IB_ADDR_FAMILY:-AF_INET}"
 # Optional NVSHMEM debug: set NVSHMEM_DEBUG=INFO in the pod env to enable.
 # NOTE: do NOT pin NCCL_SOCKET_IFNAME/GLOO_SOCKET_IFNAME -- under the pod network the fabric NIC
 # is not in the pod netns; let c10d/NCCL use eth0 for control. The RDMA data path is chosen by
 # NVSHMEM_HCA_LIST (set by railguard), not by IP.
 #
-# railguard.py pins each rank to the mlx5 rail that is PIX to its GPU (NVSHMEM otherwise defaults
-# to mlx5_0 -> silent GPUDirect drop off the wrong rail). Cross-node rail SYMMETRY is guaranteed
-# upstream by DRA bus-pinning (both pods pin the same bus -> same board -> same rail), so railguard
-# no longer needs a cross-node mismatch check -- it is purely local now. See railguard.py.
+# railguard.py pins the mlx5 rail NVSHMEM must use (it otherwise defaults to mlx5_0 -> wrong rail
+# -> timeout / silent drop): 1 GPU/pod -> each rank's own PIX rail; >1 GPU/pod -> one SHARED rail
+# (local rank 0's) for the whole pod, so a multi-GPU world stays on one routable /16. Cross-node
+# rail SYMMETRY is guaranteed upstream by DRA bus-pinning (both pods pin the same bus -> same board
+# -> same rail), so railguard no longer needs a cross-node mismatch check. See railguard.py.
 exec torchrun \
   --nnodes="$NNODES" --node_rank="$NODE_RANK" --nproc_per_node="$NPROC" \
   --master_addr="$MASTER_ADDR" --master_port="$MPORT" \
