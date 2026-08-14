@@ -127,6 +127,11 @@ spec:
       numProcPerNode: {b['gpus']}
   template:
     spec:
+      # template.spec IS a JobSetSpec -> ttlSecondsAfterFinished propagates to the created JobSet,
+      # which the JobSet controller auto-deletes (cascading its Jobs + pods) 30 min after the run
+      # finishes (Complete or Failed). Keeps completed TrainJob runs from piling up without any
+      # orchestrator-side cleanup; the grace window leaves logs grabbable for a while first.
+      ttlSecondsAfterFinished: 1800
       replicatedJobs:
         - name: node
           template:
