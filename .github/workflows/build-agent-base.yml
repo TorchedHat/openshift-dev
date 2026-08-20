@@ -1,0 +1,55 @@
+name: Build and Push Agent Base to Quay
+
+# Bare, CPU-only agent base image (see .devcontainer/agent.Dockerfile).
+# No CUDA. Matrix is python x fedora-version (fc41 -> gcc-13, fc42 -> gcc'').
+# Reuses the same Quay bot creds as build-push.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.devcontainer/agent.Dockerfile'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Single active build for now. To fan out, add versions to the lists
+        # and a matching fedora -> gcc entry under include (fc41 -> -13,
+        # fc42 -> '').
+        python-version: ['3.11']
+        fedora-version: ['41']
+        include:
+          - fedora-version: '41'
+            gcc-suffix: '-13'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo docker image prune -af
+
+      - name: Login to Quay
+        uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: .devcontainer/agent.Dockerfile
+          push: true
+          build-args: |
+            PY_VER=${{ matrix.python-version }}
+            FEDORA_VERSION=${{ matrix.fedora-version }}
+            GCC_SUFFIX=${{ matrix.gcc-suffix }}
+          tags: |
+            quay.io/rh-ee-sampark/devcontainers:agent-py${{ matrix.python-version }}-fc${{ matrix.fedora-version }}
+            ${{ matrix.python-version == '3.11' && matrix.fedora-version == '41' && 'quay.io/rh-ee-sampark/devcontainers:agent' || '' }}
