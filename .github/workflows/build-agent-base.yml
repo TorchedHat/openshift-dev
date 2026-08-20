@@ -1,0 +1,43 @@
+name: Build and Push Agent Base to Quay
+
+# Bare, CPU-only agent base image (see .devcontainer/agent.Dockerfile).
+# No CUDA -- one build, tagged :agent. Reuses the same Quay bot creds as
+# build-push.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.devcontainer/agent.Dockerfile'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo docker image prune -af
+
+      - name: Login to Quay
+        uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: .devcontainer/agent.Dockerfile
+          push: true
+          build-args: |
+            PY_VER=3.11
+            FEDORA_VERSION=41
+            GCC_SUFFIX=-13
+          tags: |
+            quay.io/rh-ee-sampark/devcontainers:agent
