@@ -20,11 +20,14 @@ so any namespace can submit jobs against its own dev PVC.
 PERSISTENT LAB (--lab)
 ----------------------
 For interactive NVSHMEM/IBGDA debugging (TrainJob pods GC too fast), pass --lab to stand up a
-long-lived per-node Deployment instead of a TrainJob: sleep-infinity pods, one per node, each
-pinned to the SAME symmetric DRA buses (via the same picker), with RDMA + IPC_LOCK and the dev PVC
-at /home/devuser. Exec in and iterate by hand. The lab-specific logic lives in lab.py.
+long-lived per-node StatefulSet (+ headless Service) instead of a TrainJob: sleep-infinity pods, one
+per node, each pinned to the SAME symmetric DRA buses (via the same picker), with RDMA + IPC_LOCK and
+the dev PVC at /home/devuser. The StatefulSet + Service give stable pod DNS, so the torch rendezvous
+env (PET_MASTER_ADDR/PET_NNODES/PET_NPROC_PER_NODE, + PET_NODE_RANK from the pod ordinal) is baked
+into the pods -- exec in and `/opt/rz/entrypoint.sh <test.py>` just works. The lab-specific logic
+lives in lab.py.
     ./submit-job.py -n <ns> --lab --bucket 2gpu
-Tear it down cleanly (deletes the Deployment AND the stamped RCT, freeing the GPUs):
+Tear it down cleanly (deletes the StatefulSet, Service AND the stamped RCT, freeing the GPUs):
     ./submit-job.py -n <ns> --lab --destroy --bucket 2gpu
 
 PREREQUISITE: run  ./setup-orchestrator.py --namespace <ns>  once for the namespace first.
@@ -272,7 +275,8 @@ def main():
     ap.add_argument("--yes", "-y", action="store_true", help="don't prompt to confirm before launch")
     # --- persistent lab (see lab.py) ---
     ap.add_argument("--lab", action="store_true",
-                    help="stand up a persistent per-node NVSHMEM/IBGDA lab (Deployment) instead of a TrainJob")
+                    help="stand up a persistent per-node NVSHMEM/IBGDA lab (StatefulSet + headless "
+                         "Service) instead of a TrainJob")
     ap.add_argument("--pvc", default=None,
                     help="dev PVC to mount at /home/devuser, overriding the runtime default "
                          "(pytorch-py3-10-<ns>). Use when your python/torch build lives in a "
@@ -280,7 +284,7 @@ def main():
     ap.add_argument("--replicas", type=int, default=None,
                     help="[--lab] lab pod count (default --min-nodes; one pod per node)")
     ap.add_argument("--destroy", action="store_true",
-                    help="[--lab] tear the lab down: delete its Deployment AND stamped RCT (frees GPUs)")
+                    help="[--lab] tear the lab down: delete its StatefulSet, Service AND stamped RCT (frees GPUs)")
     args = ap.parse_args()
 
     # --lab: hand off to the persistent-lab path (its own inputs; no test script / TrainJob).
