@@ -37,7 +37,10 @@ if ! ldconfig -p 2>/dev/null | grep -q 'libibverbs\.so'; then
 fi
 
 # --- rendezvous params from Trainer's torch policy ---
-NODE_RANK="${PET_NODE_RANK:-${JOB_COMPLETION_INDEX:-0}}"
+# NODE_RANK precedence: the TrainJob torch plugin sets PET_NODE_RANK; a JobSet-indexed pod sets
+# JOB_COMPLETION_INDEX; the persistent --lab StatefulSet sets neither, so fall back to the pod's
+# ordinal, which is the suffix of its (StatefulSet-stable) hostname `<lab>-<ordinal>`.
+NODE_RANK="${PET_NODE_RANK:-${JOB_COMPLETION_INDEX:-${HOSTNAME##*-}}}"
 NNODES="${PET_NNODES:?PET_NNODES not set (is this a torch-policy runtime?)}"
 NPROC="${PET_NPROC_PER_NODE:?PET_NPROC_PER_NODE not set}"
 MASTER_ADDR="${PET_MASTER_ADDR:?PET_MASTER_ADDR not set}"   # rank-0 pod DNS -> routable pod IP
