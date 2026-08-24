@@ -138,9 +138,11 @@ spec:
         - name: lab
           image: {image}
           imagePullPolicy: IfNotPresent
-          # sleep-infinity PID 1 so the pod stays up whether or not anyone is attached;
-          # `oc exec -it ... -- bash` gives an interactive shell with its own tty.
-          command: ["/bin/bash", "-c", "sleep infinity"]
+          # tini as PID 1 reaps orphaned children (e.g. git subprocesses left by killed
+          # test/build scripts) so they don't pile up as zombies; sleep infinity keeps the
+          # pod up whether or not anyone is attached. `-g` forwards signals to the whole
+          # process group. `oc exec -it ... -- bash` gives an interactive shell with its own tty.
+          command: ["/usr/bin/tini", "-g", "--", "sleep", "infinity"]
           securityContext:
             capabilities:
               add: ["IPC_LOCK"]

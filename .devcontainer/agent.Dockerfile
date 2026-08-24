@@ -56,6 +56,7 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/y
         nodejs \
         sudo \
         libibverbs \
+        tini \
     && dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo \
     && dnf install gh --repo gh-cli -y \
     && if [ -n "${GCC_SUFFIX}" ]; then \

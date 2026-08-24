@@ -82,7 +82,8 @@ RUN dnf upgrade --refresh -y && \
         openssl \
         libxcrypt-compat.x86_64 \
         google-cloud-cli \
-        sudo && \
+        sudo \
+        tini && \
     dnf clean all
 
 # ---------------------------------------------------------------------------
