@@ -5,22 +5,6 @@
 # no longer sees nvidia.com/gpu, so the group sets rayStartParams.num-gpus="1" to advertise the
 # DRA-injected GPU to Ray. Applying this file creates the template and the RayCluster together;
 # idempotent if gpu-1 already exists in this namespace.
-apiVersion: resource.k8s.io/v1
-kind: ResourceClaimTemplate
-metadata:
-  name: gpu-1
-  namespace: <username>
-spec:
-  spec:
-    devices:
-      requests:
-        - name: gpu
-          exactly:
-            deviceClassName: gpu.nvidia.com
-            allocationMode: ExactCount
-            count: 1
----
-apiVersion: ray.io/v1
 kind: RayCluster
 metadata:
   name: raycluster-3w
