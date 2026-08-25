@@ -56,6 +56,8 @@ oc create secret generic $NAMESPACE-gcloud-config \
   --namespace=$NAMESPACE \
   --from-file=$GCLOUD_CREDENTIALS
 
+# apply the DRA resource templates
+oc apply -f <(sed "s/<username>/$NAMESPACE/g" resourceClaimTemplates/rct_gpu.yml)
 # inject the vertex project ID env var into the container (reads YAML on stdin,
 # writes the modified YAML on stdout; idempotent so re-runs won't duplicate)
 inject_vertex_env() {
@@ -66,7 +68,7 @@ inject_vertex_env() {
   ' -
 }
 
-# create mig-18g deployments for all python versions
+# create deployments for all python versions
 for PYVER in 3.10 3.11 3.12 3.13 3.14; do
   PYSLUG="py${PYVER//./}"
   PYDASH="py${PYVER//./-}"
@@ -74,15 +76,13 @@ for PYVER in 3.10 3.11 3.12 3.13 3.14; do
       -e "s/<pyslug>/$PYSLUG/g" \
       -e "s/<pydash>/$PYDASH/g" \
       -e "s/<pyversion>/$PYVER/g" \
-      deployment/deployment-mig-18g.yml \
+      deployment/deployment.yml \
     | inject_vertex_env \
     | oc apply -f -
 done
 
 # create other deployments
 for DEPLOYMENT in \
-  deployment/deployment-mig-35g.yml \
-  deployment/deployment.yml \
   deployment/deployment-rdma.yml; do
   sed "s/<username>/$NAMESPACE/g" "$DEPLOYMENT" \
     | inject_vertex_env \

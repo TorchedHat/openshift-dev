@@ -13,16 +13,7 @@ metadata:
   namespace: <username>
 spec:
   hard:
-    # MIG slices
-    requests.nvidia.com/mig-1g.18gb: "1"
-    requests.nvidia.com/mig-2g.35gb: "1"
-    requests.nvidia.com/mig-1g.10gb: "1"
-    limits.nvidia.com/mig-1g.10gb: "1"
-    requests.nvidia.com/mig-2g.20gb: "1"
-    limits.nvidia.com/mig-2g.20gb: "1"
-
-    # Full GPUs
-    requests.nvidia.com/gpu: "0"
+    gpu.nvidia.com.deviceclass.resource.k8s.io/devices: '2'
 
     # CPU and memory
     requests.cpu: "16"
@@ -45,5 +36,5 @@ metadata:
   namespace: <username>
 spec:
   hard:
-    requests.storage: 300Gi
+    requests.storage: 1.5Ti
     persistentvolumeclaims: "5"

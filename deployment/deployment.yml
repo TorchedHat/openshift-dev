@@ -1,18 +1,21 @@
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: <username>-dev
+  name: <username>-dev-<pyslug>
   namespace: <username>
 spec:
   replicas: 0
   selector:
     matchLabels:
-      app: <username>-dev
+      app: <username>-dev-<pyslug>
   template:
     metadata:
       labels:
-        app: <username>-dev
+        app: <username>-dev-<pyslug>
     spec:
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: gpu-1
       volumes:
         - name: ssh-key
           secret:
@@ -31,7 +34,7 @@ spec:
             defaultMode: 0640
         - name: pytorch-eco-data
           persistentVolumeClaim:
-            claimName: pytorch-eco-storage-<username>
+            claimName: pytorch-<pydash>-<username>
         - name: bazelrc
           configMap:
             name: bazelrc
@@ -49,7 +52,7 @@ spec:
           emptyDir: {}
       initContainers:
         - name: init-container
-          image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
+          image: 'quay.io/rh-ee-sampark/devcontainers:py<pyversion>'
           command:
             - /bin/bash
             - /scripts/configure_data_dir.sh
@@ -70,11 +73,11 @@ spec:
             limits:
               cpu: '16'
               memory: 32Gi
-              nvidia.com/gpu: '1'
             requests:
               cpu: '4'
               memory: 32Gi
-              nvidia.com/gpu: '1'
+            claims:
+              - name: gpu
           stdin: true
           terminationMessagePath: /dev/termination-log
           name: container
@@ -112,7 +115,7 @@ spec:
               mountPath: /home/devuser/.claude
           terminationMessagePolicy: File
           tty: true
-          image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
+          image: 'quay.io/rh-ee-sampark/devcontainers:py<pyversion>'
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
       dnsPolicy: ClusterFirst
@@ -120,6 +123,7 @@ spec:
         runAsUser: 1000
         runAsGroup: 0
         fsGroup: 0
+        fsGroupChangePolicy: OnRootMismatch
       imagePullSecrets:
         - name: rh-ee-sampark-dev-bot-pull-secret
       schedulerName: default-scheduler
