@@ -48,6 +48,9 @@ FLAGS
   --image          dev container image              (prompted; default quay.io/.../py3.10)
   --pvc            dev PVC mounted at /home/devuser (default pytorch-py3-10-<ns>). Override when
                    your python/torch build lives elsewhere, e.g. the legacy pytorch-ibmc-storage-<ns>.
+  --pull-secret    image pull secret override. TrainJob: overrides the secret baked into the
+                   TrainingRuntime (via podTemplateOverrides); --lab: overrides the lab default.
+                   Omit to inherit the runtime/lab default.
   --job-name       TrainJob name                    (prompted; default symmem-<bucket>)
   --script-args    extra args passed to your script after its path (space-separated)
   --min-nodes      buses must be mutually free on >= N nodes  (default 2)
