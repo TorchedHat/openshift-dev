@@ -281,6 +281,10 @@ def main():
                     help="dev PVC to mount at /home/devuser, overriding the runtime default "
                          "(pytorch-py3-10-<ns>). Use when your python/torch build lives in a "
                          "different PVC, e.g. the legacy pytorch-ibmc-storage-<ns>. Also used by --lab.")
+    ap.add_argument("--pull-secret", default=None,
+                    help="[--lab] image pull secret for the lab pods, overriding the default "
+                         "(rh-ee-sampark-dev-bot-pull-secret). The TrainJob path inherits its pull "
+                         "secret from the TrainingRuntime instead, so this only affects --lab.")
     ap.add_argument("--replicas", type=int, default=None,
                     help="[--lab] lab pod count (default --min-nodes; one pod per node)")
     ap.add_argument("--destroy", action="store_true",
