@@ -80,7 +80,7 @@ spec:
 """
 
 
-def lab_yaml(name, ns, rct, image, pvc, replicas, nproc, sizing):
+def lab_yaml(name, ns, rct, image, pvc, replicas, nproc, sizing, pull_secret):
     """A persistent per-node lab StatefulSet: `replicas` sleep-infinity pods, forced one-per-node via
     podAntiAffinity, each pinning the SAME bus-pinned symmetric RCT the picker just stamped -> same
     board -> same PIX mlx5 rail across nodes (identical placement to the TrainingRuntime, but
@@ -114,7 +114,7 @@ spec:
     spec:
       serviceAccountName: {SA}
       imagePullSecrets:
-        - name: {PULL_SECRET}
+        - name: {pull_secret}
       securityContext:
         runAsUser: 1000
         runAsGroup: 0
@@ -137,7 +137,10 @@ spec:
       containers:
         - name: lab
           image: {image}
-          imagePullPolicy: IfNotPresent
+          # Always re-pull: the lab tracks a mutable dev tag (e.g. :py3.12) that gets rebuilt in
+          # place, so IfNotPresent would pin pods to a stale node-cached layer. Matches the
+          # TrainingRuntime's pull policy (setup-orchestrator.py) for the same reason.
+          imagePullPolicy: Always
           # tini as PID 1 reaps orphaned children (e.g. git subprocesses left by killed
           # test/build scripts) so they don't pile up as zombies; sleep infinity keeps the
           # pod up whether or not anyone is attached. `-g` forwards signals to the whole
@@ -208,6 +211,7 @@ def submit_lab(args, sj):
     image = args.image or sj.prompt("Image", default=sj.IMAGE)
     lab_name = args.job_name or sj.prompt("Lab name", default="nvshmem-lab")
     pvc = args.pvc or default_pvc(ns)
+    pull_secret = args.pull_secret or PULL_SECRET
     # One pod per node; the antiAffinity forces them apart, so replicas must equal the node count.
     replicas = args.replicas if args.replicas is not None else args.min_nodes
     b = sj.BUCKETS[bucket]
@@ -218,6 +222,7 @@ def submit_lab(args, sj):
     sj.info(f"  namespace   {ns}")
     sj.info(f"  bucket      {bucket}  ({b['gpus']} GPU/pod, RCT {rct})")
     sj.info(f"  image       {image}")
+    sj.info(f"  pull secret {pull_secret}")
     sj.info(f"  PVC         {pvc}  ->  /home/devuser")
     sj.info(f"  StatefulSet {lab_name}  (replicas={replicas}, one per node) + headless Service {lab_name}")
     sj.info(f"  rendezvous  PET_MASTER_ADDR={lab_name}-0.{lab_name}.{ns}.svc.cluster.local:29500  "
@@ -237,7 +242,7 @@ def submit_lab(args, sj):
     # 1) pick symmetric buses (same pre-flight view as a job launch)
     buses = sj.pick_buses(b["gpus"], args.min_nodes, args.buckets_order)
     svc = svc_yaml(lab_name, ns)
-    sts = lab_yaml(lab_name, ns, rct, image, pvc, replicas, b["gpus"], sizing)
+    sts = lab_yaml(lab_name, ns, rct, image, pvc, replicas, b["gpus"], sizing, pull_secret)
 
     if args.dry_run:
         # stdout = the three manifests (RCT + Service + StatefulSet), so

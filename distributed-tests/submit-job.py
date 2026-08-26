@@ -48,6 +48,9 @@ FLAGS
   --image          dev container image              (prompted; default quay.io/.../py3.10)
   --pvc            dev PVC mounted at /home/devuser (default pytorch-py3-10-<ns>). Override when
                    your python/torch build lives elsewhere, e.g. the legacy pytorch-ibmc-storage-<ns>.
+  --pull-secret    image pull secret override. TrainJob: overrides the secret baked into the
+                   TrainingRuntime (via podTemplateOverrides); --lab: overrides the lab default.
+                   Omit to inherit the runtime/lab default.
   --job-name       TrainJob name                    (prompted; default symmem-<bucket>)
   --script-args    extra args passed to your script after its path (space-separated)
   --min-nodes      buses must be mutually free on >= N nodes  (default 2)
@@ -214,7 +217,7 @@ def rct_yaml(name, ns, buses):
             f"{reqs}")
 
 
-def trainjob_yaml(name, ns, bucket, image, script_basename, script_args, pvc=None):
+def trainjob_yaml(name, ns, bucket, image, script_basename, script_args, pvc=None, pull_secret=None):
     # torchrun receives the workload path (+ optional args) as trainer.args; the entrypoint execs
     # `torchrun ... railguard.py "$@"` and railguard runpy-runs argv[1]. The script is mounted from
     # the cross-node-test ConfigMap at /workspace by the podTemplateOverrides below.
@@ -230,6 +233,13 @@ def trainjob_yaml(name, ns, bucket, image, script_basename, script_args, pvc=Non
             persistentVolumeClaim:
               claimName: {pvc}
 """ if pvc else "")
+    # Optionally override the runtime's imagePullSecrets. By default the TrainJob inherits the pull
+    # secret baked into the TrainingRuntime; when --pull-secret is given (e.g. a --image from a
+    # different registry), re-declare it here so the pods pull with the right credentials.
+    pull_secret_override = (f"""\
+        imagePullSecrets:
+          - name: {pull_secret}
+""" if pull_secret else "")
     return f"""\
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
@@ -249,7 +259,7 @@ spec:
     - targetJobs:
         - name: node
       spec:
-        volumes:
+{pull_secret_override}        volumes:
           - name: test-script
             configMap:
               name: {TEST_CM}
@@ -281,6 +291,11 @@ def main():
                     help="dev PVC to mount at /home/devuser, overriding the runtime default "
                          "(pytorch-py3-10-<ns>). Use when your python/torch build lives in a "
                          "different PVC, e.g. the legacy pytorch-ibmc-storage-<ns>. Also used by --lab.")
+    ap.add_argument("--pull-secret", default=None,
+                    help="image pull secret override. For a TrainJob it overrides the secret baked "
+                         "into the TrainingRuntime (via podTemplateOverrides); for --lab it overrides "
+                         "the lab default (rh-ee-sampark-dev-bot-pull-secret). Omit to inherit the "
+                         "runtime/lab default.")
     ap.add_argument("--replicas", type=int, default=None,
                     help="[--lab] lab pod count (default --min-nodes; one pod per node)")
     ap.add_argument("--destroy", action="store_true",
@@ -318,6 +333,7 @@ def main():
     info(f"  bucket      {bucket}  ({b['gpus']} GPU/pod x 2 nodes, RCT {b['rct']})")
     info(f"  image       {image}")
     info(f"  dev PVC     {args.pvc or f'pytorch-py3-10-{ns} (runtime default)'}")
+    info(f"  pull secret {args.pull_secret or '(runtime default)'}")
     info(f"  TrainJob    {job_name}\n")
 
     if not args.dry_run:
@@ -329,7 +345,8 @@ def main():
 
     # 1) pick symmetric buses (always shown — it's the useful pre-flight view)
     buses = pick_buses(b["gpus"], args.min_nodes, args.buckets_order)
-    tj = trainjob_yaml(job_name, ns, bucket, image, script_basename, script_args, pvc=args.pvc)
+    tj = trainjob_yaml(job_name, ns, bucket, image, script_basename, script_args,
+                       pvc=args.pvc, pull_secret=args.pull_secret)
 
     if args.dry_run:
         # stdout = the two manifests (RCT + TrainJob), so `submit ... --dry-run | oc apply -f -` works.
