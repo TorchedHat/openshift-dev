@@ -163,6 +163,7 @@ RUN mkdir -p /build_ray \
 # Layer 6: setuptools, uv, Claude, gcc symlinks, git config, sudoers, permissions
 RUN /home/devuser/miniconda/bin/pip install --no-cache-dir setuptools uv scikit-build \
     && curl -fsSL https://claude.ai/install.sh | HOME=/home/devuser bash \
+    && curl -fsSL https://chatgpt.com/codex/install.sh | HOME=/home/devuser bash \
     && if [ -n "${GCC_SUFFIX}" ]; then \
            rm -f /usr/bin/gcc /usr/bin/g++ \
            && ln -s "/usr/bin/gcc${GCC_SUFFIX}" /usr/bin/gcc \
