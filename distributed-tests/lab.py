@@ -282,16 +282,15 @@ def submit_lab(args, sj):
 
 
 def destroy_lab(args, sj):
-    """Tear a persistent lab down cleanly: delete its StatefulSet, headless Service, AND the symmetric
-    RCT the picker stamped for it. `sj` is submit-job.py's module (same reuse pattern as submit_lab).
+    """Tear a lab down: delete its workload (StatefulSet AND Deployment), headless Service, and the
+    symmetric RCT. `sj` is submit-job.py's module (same reuse pattern as submit_lab).
 
-    Deleting the StatefulSet frees the GPUs immediately -- the per-pod ResourceClaims are owned by the
-    pods and get garbage-collected when they terminate. (The lab mounts an external dev PVC, not
-    volumeClaimTemplates, so the StatefulSet owns no PVCs to leak.) The stamped ResourceClaimTemplate
-    holds no devices itself, but is deleted by default too: its pinned bus IDs go stale as GPUs come
-    and go on the cluster, so a leftover template would pin the next lab/job to buses that may no
-    longer be free (the submit path re-stamps it fresh anyway). Idempotent -- safe to run on an
-    already-gone lab."""
+    Both kinds are tried because the lab workload kind changed over time (older submit-job.py used a
+    Deployment; it's a StatefulSet now) -- deleting only one silently misses a lab made by the other.
+    We report what was actually removed (oc echoes a resource only when it deleted one) and warn when
+    nothing matched instead of claiming a phantom success. Deleting the workload frees the GPUs: the
+    per-pod ResourceClaims are pod-owned and GC on termination. The RCT holds no devices but is
+    deleted too so its stale pinned buses can't constrain the next lab. Idempotent."""
     ns = args.namespace or sj.prompt("Namespace", required=True)
     bucket = args.bucket or sj.prompt("GPU bucket (2gpu/4gpu/8gpu)", default="2gpu")
     if bucket not in sj.BUCKETS:
@@ -306,20 +305,27 @@ def destroy_lab(args, sj):
     sj.info(f"  RCT         {rct}  (bucket {bucket})\n")
 
     if args.dry_run:
-        sj.info(f"would run:  oc -n {ns} delete statefulset {lab_name} --ignore-not-found")
+        sj.info(f"would run:  oc -n {ns} delete statefulset,deployment {lab_name} --ignore-not-found")
         sj.info(f"would run:  oc -n {ns} delete service {lab_name} --ignore-not-found")
         sj.info(f"would run:  oc -n {ns} delete resourceclaimtemplate {rct} --ignore-not-found")
         return
 
-    if not args.yes and not sj.confirm(f"Delete StatefulSet/{lab_name}, Service/{lab_name} and RCT/{rct} in {ns}?"):
+    if not args.yes and not sj.confirm(f"Delete workload/Service {lab_name} and RCT/{rct} in {ns}?"):
         sys.exit("aborted")
 
-    # StatefulSet first -> pods terminate -> their ResourceClaims GC and release the GPUs; then the
-    # headless Service, then the now-empty template so it can't pin a stale bus set later.
-    sj.sh("oc", "-n", ns, "delete", "statefulset", lab_name, "--ignore-not-found")
-    sj.info(f"deleted StatefulSet/{lab_name}")
-    sj.sh("oc", "-n", ns, "delete", "service", lab_name, "--ignore-not-found")
-    sj.info(f"deleted Service/{lab_name}")
-    sj.sh("oc", "-n", ns, "delete", "resourceclaimtemplate", rct, "--ignore-not-found")
-    sj.info(f"deleted ResourceClaimTemplate/{rct}")
-    sj.info("\nLab destroyed; GPUs released (ResourceClaims GC with the pods).")
+    # Workload first -> pods terminate -> their ResourceClaims GC and release the GPUs; then the
+    # headless Service, then the now-empty template so it can't pin a stale bus set later. Try both
+    # workload kinds (see docstring). --ignore-not-found makes each delete idempotent; `-o name` +
+    # capture lets us report only what was actually removed.
+    deleted = []
+    targets = [("statefulset", lab_name), ("deployment", lab_name),
+               ("service", lab_name), ("resourceclaimtemplate", rct)]
+    for kind, obj in targets:
+        out = sj.sh("oc", "-n", ns, "delete", kind, obj, "--ignore-not-found", "-o", "name").strip()
+        if out:
+            sj.info(f"deleted {out}")
+            deleted.append(out)
+    if deleted:
+        sj.info("\nLab destroyed; GPUs released (ResourceClaims GC with the pods).")
+    else:
+        sj.info(f"\nnothing deleted: no StatefulSet/Deployment/Service {lab_name} or RCT/{rct} in {ns}.")
