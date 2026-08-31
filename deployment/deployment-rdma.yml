@@ -33,6 +33,10 @@ spec:
           secret:
             secretName: <username>-gcloud-config
             defaultMode: 0640
+        - name: codex-config
+          secret:
+            secretName: <username>-codex-config
+            defaultMode: 0640
         - name: pytorch-eco-data
           persistentVolumeClaim:
             claimName: pytorch-py3-10-<username>
@@ -121,6 +125,10 @@ spec:
             - name: gcloud-config
               readOnly: true
               mountPath: /home/devuser/.config/gcloud
+            - name: codex-config
+              readOnly: true
+              mountPath: /home/devuser/.codex/auth.json
+              subPath: auth.json
             - name: bazelrc
               mountPath: /home/devuser/.bazelrc
               subPath: .bazelrc

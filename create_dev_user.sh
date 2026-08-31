@@ -13,6 +13,7 @@ while true; do
   read -p "Enter openshift username: " USERNAME
   read -e -p "Enter ssh private key path for github: " SSH_KEY_PATH
   read -e -p "Enter gcloud application default credentials path: " GCLOUD_CREDENTIALS
+  read -e -p "Enter codex auth.json path: " CODEX_AUTH
   read -e -i "${ANTHROPIC_VERTEX_PROJECT_ID:-}" -p "Enter vertex project ID: " PROJECT_ID
 
   NAMESPACE=$(echo "$USERNAME" | tr '[:upper:]' '[:lower:]')
@@ -22,6 +23,7 @@ while true; do
   echo "  Username (namespace): $NAMESPACE"
   echo "  SSH private key path: $SSH_KEY_PATH"
   echo "  gcloud credentials:   $GCLOUD_CREDENTIALS"
+  echo "  codex auth.json:      $CODEX_AUTH"
   echo "  Vertex Project ID:    $PROJECT_ID"
   echo ""
   read -p "Is this correct? (y/n): " CONFIRM
@@ -55,6 +57,16 @@ fi
 oc create secret generic $NAMESPACE-gcloud-config \
   --namespace=$NAMESPACE \
   --from-file=$GCLOUD_CREDENTIALS
+
+# create codex authentication secret (file auth: mounted at ~/.codex/auth.json in
+# the pod); if one already exists, delete it first so we upload the latest credentials
+if oc get secret $NAMESPACE-codex-config --namespace=$NAMESPACE >/dev/null 2>&1; then
+  echo "Secret $NAMESPACE-codex-config already exists, deleting it to upload the latest credentials."
+  oc delete secret $NAMESPACE-codex-config --namespace=$NAMESPACE
+fi
+oc create secret generic $NAMESPACE-codex-config \
+  --namespace=$NAMESPACE \
+  --from-file=auth.json=$CODEX_AUTH
 
 # apply the DRA resource templates
 oc apply -f <(sed "s/<username>/$NAMESPACE/g" resourceClaimTemplates/rct_gpu.yml)
