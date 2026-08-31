@@ -95,7 +95,8 @@ done
 
 # create other deployments
 for DEPLOYMENT in \
-  deployment/deployment-rdma.yml; do
+  deployment/deployment-rdma.yml \
+  deployment/deployment-rdma-py312.yml; do
   sed "s/<username>/$NAMESPACE/g" "$DEPLOYMENT" \
     | inject_vertex_env \
     | oc apply -f -
