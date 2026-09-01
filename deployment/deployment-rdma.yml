@@ -76,7 +76,7 @@ spec:
       containers:
         - resources:
             limits:
-              cpu: '16'
+              cpu: '32'
               memory: 128Gi
               rdma/rdma_shared_device_a: '1'
             requests:
@@ -95,7 +95,11 @@ spec:
           - name: GCE_METADATA_HOST
             value: "127.0.0.1:1"
           - name: MAX_JOBS
-            value: "8"
+            value: "24"
+          - name: CCACHE_DIR      # ccache on local /tmp (overlay), not CephFS home, for faster builds.
+            value: /tmp/ccache
+          - name: CCACHE_MAXSIZE
+            value: "30G"
           - name: NCCL_IB_DISABLE
             value: "0"
           - name: NCCL_NET_GDR_LEVEL

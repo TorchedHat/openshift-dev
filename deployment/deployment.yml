@@ -75,8 +75,8 @@ spec:
       containers:
         - resources:
             limits:
-              cpu: '16'
-              memory: 32Gi
+              cpu: '32'
+              memory: 128Gi
             requests:
               cpu: '4'
               memory: 32Gi
@@ -91,7 +91,11 @@ spec:
           - name: GCE_METADATA_HOST
             value: "127.0.0.1:1"
           - name: MAX_JOBS
-            value: "8"
+            value: "24"
+          - name: CCACHE_DIR      # ccache on local /tmp (overlay), not CephFS home, for faster builds.
+            value: /tmp/ccache
+          - name: CCACHE_MAXSIZE
+            value: "30G"
           command:
             - /bin/bash
           ports:
