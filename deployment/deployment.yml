@@ -57,6 +57,7 @@ spec:
       initContainers:
         - name: init-container
           image: 'quay.io/rh-ee-sampark/devcontainers:py<pyversion>'
+          imagePullPolicy: Always
           command:
             - /bin/bash
             - /scripts/configure_data_dir.sh
