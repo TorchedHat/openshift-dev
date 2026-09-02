@@ -14,6 +14,22 @@ data:
     MARKER="/mnt/data/.image-build-id"
     SENTINEL="/mnt/data/.init-done"
 
+    # Heal codex payload: the auth.json subPath mount makes kubelet pre-create a
+    # root-owned ~/.codex on the PVC, which blocks the rsync (runs as devuser)
+    # from writing the baked standalone payload into it, leaving codex broken.
+    # devuser can't chown a root-owned dir, but it can replace the dir entry
+    # (write perm on the parent /mnt/data via fsGroup): move the bad dir aside,
+    # recreate it devuser-owned, and recopy the image's payload into it.
+    # Runs before the fast-path skip so a broken .codex is healed even when the
+    # build-id marker already matches; the guard makes it a no-op once healthy.
+    if [ -d /home/devuser/.codex ] && [ ! -e /mnt/data/.codex/packages/standalone/current ]; then
+      rm -rf /mnt/data/.codex.stale 2>/dev/null || true
+      mv /mnt/data/.codex /mnt/data/.codex.stale 2>/dev/null || true
+      mkdir -p /mnt/data/.codex
+      cp -a /home/devuser/.codex/. /mnt/data/.codex/ 2>/dev/null || true
+      rm -rf /mnt/data/.codex.stale 2>/dev/null || true
+    fi
+
     if [ -n "$IMAGE_ID" ]; then
       if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$IMAGE_ID" ]; then
         exit 0
@@ -22,20 +38,6 @@ data:
       if [ -f "$SENTINEL" ]; then
         exit 0
       fi
-    fi
-
-    # Heal codex payload: the auth.json subPath mount makes kubelet pre-create a
-    # root-owned ~/.codex on the PVC, which blocks the rsync (runs as devuser)
-    # from writing the baked standalone payload into it, leaving codex broken.
-    # devuser can't chown a root-owned dir, but it can replace the dir entry
-    # (write perm on the parent /mnt/data via fsGroup): move the bad dir aside,
-    # recreate it devuser-owned, and recopy the image's payload into it.
-    if [ -d /home/devuser/.codex ] && [ ! -e /mnt/data/.codex/packages/standalone/current ]; then
-      rm -rf /mnt/data/.codex.stale 2>/dev/null || true
-      mv /mnt/data/.codex /mnt/data/.codex.stale 2>/dev/null || true
-      mkdir -p /mnt/data/.codex
-      cp -a /home/devuser/.codex/. /mnt/data/.codex/ 2>/dev/null || true
-      rm -rf /mnt/data/.codex.stale 2>/dev/null || true
     fi
 
     rsync -a --ignore-existing --no-owner --no-group \
