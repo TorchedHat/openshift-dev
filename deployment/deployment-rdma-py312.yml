@@ -115,6 +115,12 @@ spec:
             value: "<rank>"
           command:
             - /bin/bash
+          # /tmp is ephemeral, so CCACHE_DIR must exist before login shells run;
+          # otherwise /etc/profile.d/ccache.sh unsets CCACHE_DIR as "not writable".
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "mkdir -p /tmp/ccache"]
           ports:
             - containerPort: 8080
               protocol: TCP
