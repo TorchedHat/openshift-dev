@@ -33,9 +33,9 @@
 # derived from CUDA_VERSION inside the RUN steps below.
 # NOTE: no PY_VER / GCC_SUFFIX here -- the runtime image has NO python or compilers of
 # its own (both come from the PVC's miniconda); python version only drives the image TAG.
-ARG FEDORA_VERSION=41
-ARG CUDA_VERSION=12.9
-ARG CUDNN_VERSION=9.6.0.74
+ARG FEDORA_VERSION=42
+ARG CUDA_VERSION=13.0
+ARG CUDNN_VERSION=9.15.0.58
 ARG CUDNN_CUDA_SUFFIX=cuda12
 ARG NVSHMEM_VERSION=3.7.2
 

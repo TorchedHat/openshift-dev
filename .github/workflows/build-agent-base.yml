@@ -21,10 +21,10 @@ jobs:
         # and a matching fedora -> gcc entry under include (fc41 -> -13,
         # fc42 -> '').
         python-version: ['3.11']
-        fedora-version: ['41']
+        fedora-version: ['42']
         include:
-          - fedora-version: '41'
-            gcc-suffix: '-13'
+          - fedora-version: '42'
+            gcc-suffix: ''
     steps:
       - uses: actions/checkout@v4
 
