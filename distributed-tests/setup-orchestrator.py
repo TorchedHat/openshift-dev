@@ -58,6 +58,7 @@ import json
 import os
 import subprocess
 import sys
+from utils import BUCKETS, runtime_name
 
 IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0"
 PULL_SECRET = "rh-ee-sampark-dev-bot-pull-secret"
@@ -65,13 +66,6 @@ SA = "torch-cross-node"
 SCC = "anyuid-ipc-lock"
 ENTRYPOINT_CM = "torch-cross-node-entrypoint-podnet"
 
-# bucket -> GPUs per pod (== numProcPerNode; numNodes is always 2) + the DRA claim template it
-# references + per-pod CPU/mem sizing. All buckets are 2 nodes (internode RDMA fabric test).
-BUCKETS = {
-    "2gpu": dict(gpus=1, rct="symmetric-gpu-run",   cpu_req="8",  cpu_lim="16", mem_req="64Gi",  mem_lim="128Gi"),
-    "4gpu": dict(gpus=2, rct="symmetric-gpu-run-2", cpu_req="8",  cpu_lim="16", mem_req="64Gi",  mem_lim="128Gi"),
-    "8gpu": dict(gpus=4, rct="symmetric-gpu-run-4", cpu_req="16", cpu_lim="32", mem_req="128Gi", mem_lim="256Gi"),
-}
 # Default bus priority order (identical board->bus map on every GPU node). Used only for the
 # optional static default RCTs; submit-job.py re-stamps to contention-free buses per launch.
 DEFAULT_BUSES = ["a4", "ae", "b8", "c2", "cc", "d6", "e0", "ea"]
@@ -110,7 +104,7 @@ def apply(manifest, dry_run):
 
 def runtime_yaml(bucket, ns, pvc, image, pull_secret, sa):
     b = BUCKETS[bucket]
-    name = f"torch-cross-node-{bucket}"
+    name = runtime_name(bucket)
     app = name
     return f"""\
 apiVersion: trainer.kubeflow.org/v1alpha1

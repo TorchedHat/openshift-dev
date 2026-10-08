@@ -65,19 +65,13 @@ import subprocess
 import sys
 from itertools import combinations
 
+from testharness import config
+from testharness.discovery import DiscoverTests
+from utils import BUCKETS, runtime_name
+
 IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0"
-TEST_CM = "cross-node-test"          # test script mounted at /workspace in the pods
-WORKSPACE = "/workspace"
 DEV_PVC_VOLUME = "pytorch-eco-data"  # the runtime's dev-home volume (mounted at /home/devuser);
                                      # re-declare it in podTemplateOverrides to swap the PVC
-
-# bucket -> GPUs per pod + the symmetric ResourceClaimTemplate the runtime references. Must match
-# setup-orchestrator.py's BUCKETS (the runtimes reference these RCT names by hand).
-BUCKETS = {
-    "2gpu": dict(gpus=1, rct="symmetric-gpu-run"),
-    "4gpu": dict(gpus=2, rct="symmetric-gpu-run-2"),
-    "8gpu": dict(gpus=4, rct="symmetric-gpu-run-4"),
-}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -217,12 +211,10 @@ def rct_yaml(name, ns, buses):
             f"{reqs}")
 
 
-def trainjob_yaml(name, ns, bucket, image, script_basename, script_args, pvc=None, pull_secret=None):
+def trainjob_yaml(name, ns, min_nodes, ngpus, image, run_binary, script_args, pvc=None, pull_secret=None):
     # torchrun receives the workload path (+ optional args) as trainer.args; the entrypoint execs
-    # `torchrun ... railguard.py "$@"` and railguard runpy-runs argv[1]. The script is mounted from
-    # the cross-node-test ConfigMap at /workspace by the podTemplateOverrides below.
-    argv = [f"{WORKSPACE}/{script_basename}"] + list(script_args)
-    args_yaml = "[" + ", ".join(f'"{a}"' for a in argv) + "]"
+    # `torchrun ... railguard.py "$@"` and railguard runpy-runs argv[1].
+    args_yaml = f"{run_binary} --b64-cfg {script_args}"
     # Optionally swap the runtime's dev-home PVC (mounted at /home/devuser). Trainer v2 merges
     # podTemplateOverrides volumes BY NAME, so re-declaring DEV_PVC_VOLUME with a different
     # claimName replaces the runtime's default. This is how a user whose python/torch build lives
@@ -251,31 +243,78 @@ spec:
     # namespaced TrainingRuntime (installed by setup-orchestrator.py) — NOT the cluster-scoped
     # ClusterTrainingRuntime. TrainJob must be in the same namespace as the runtime.
     kind: TrainingRuntime
-    name: torch-cross-node-{bucket}
+    name: {runtime_name(ngpus)}
   trainer:
     image: {image}
+    numNodes: {min_nodes}
+    numProcPerNode: {ngpus}
     args: {args_yaml}
   podTemplateOverrides:
     - targetJobs:
         - name: node
       spec:
 {pull_secret_override}        volumes:
-          - name: test-script
-            configMap:
-              name: {TEST_CM}
 {pvc_volume}        containers:
           - name: node
-            volumeMounts:
-              - name: test-script
-                mountPath: {WORKSPACE}
 """
+
+
+def run(
+        min_nodes,
+        ngpus,
+        buckets_order,
+        job_name,
+        ns,
+        image,
+        run_binary,
+        script_args,
+        pvc,
+        pull_secret,
+        dry_run,
+        yes
+    ):
+    rct = BUCKETS[ngpus]["rct"]
+    # 1. Pick symmetric buses (always shown)
+    buses = pick_buses(ngpus, min_nodes, buckets_order)
+    tj = trainjob_yaml(job_name, ns, min_nodes, ngpus, image, run_binary, script_args,
+                       pvc=pvc, pull_secret=pull_secret)
+
+    if dry_run:
+        info("\n--- ResourceClaimTemplate (would stamp) ---")
+        print(rct_yaml(rct, ns, buses).rstrip())
+        print("---")
+        info("--- TrainJob (would apply) ---")
+        print(tj.rstrip())
+        return
+
+    if not yes and not confirm("\nProceed with launch?"):
+        sys.exit("aborted")
+
+    # 2. (re)stamp the symmetric RCT. spec is immutable so delete and recreate.
+    sh("oc", "-n", ns, "delete", "resourceclaimtemplate", rct, "--ignore-not-found")
+    sh("oc", "apply", "-f", "-", input=rct_yaml(rct, ns, buses))
+    info(f"stamped ResourceClaimTemplate/{rct} -> {'. '.join(buses)}")
+
+    # 3. (re)launch the TrainJob
+    sh("oc", "-n", ns, "delete", "trainjob", job_name, "--ignore-not-found")
+    sh("oc", "apply", "-f", "-", input=tj)
+    info(f"launched TrainJob/{job_name}")
+
+    # The trainer controller creates a JobSet named after the TrainJob; the pods carry the JobSet
+    # label, so select this label.
+    sel = f"jobset.sigs.k8s.io/jobset-name={job_name}"
+    info(f"\nWatch:  oc -n {ns} get pods -l {sel} -o wide -w")
+    info(f"Logs:   oc -n {ns} logs -f -l {sel} --max-log-requests 8")
+    info(f"Clean:  oc -n {ns} delete trainjob {job_name}")
+
+    return
 
 
 def main():
     ap = argparse.ArgumentParser(description="Submit a cross-node TrainJob in a namespace.")
     ap.add_argument("--namespace", "-n", help="target namespace")
-    ap.add_argument("--script", help="path to launcher-style test .py")
-    ap.add_argument("--bucket", choices=list(BUCKETS), help="GPU bucket (2gpu/4gpu/8gpu)")
+    ap.add_argument("--module", help="Upstream PyTorch distributed test python module.")
+    ap.add_argument("--ngpus", type=int, choices=list(range(1, 9)), help="number of GPUs per node.")
     ap.add_argument("--image", help=f"dev container image (default {IMAGE})")
     ap.add_argument("--job-name", help="TrainJob name (default symmem-<bucket>)")
     ap.add_argument("--script-args", default="", help="extra args passed after the script path")
@@ -300,6 +339,8 @@ def main():
                     help="[--lab] lab pod count (default --min-nodes; one pod per node)")
     ap.add_argument("--destroy", action="store_true",
                     help="[--lab] tear the lab down: delete its StatefulSet, Service AND stamped RCT (frees GPUs)")
+    ap.add_argument("--suite", default="internode", type=str,
+                    help="Test suite to run (e.g., internode, intranode, mixed, subgroup)")
     ap.add_argument("--ucx", action="store_true", help="[--lab] inject UCX RDMA env (UCX_TLS + UCX_NET_DEVICES=<IB_DEV>:1) into the lab pods")
     args = ap.parse_args()
 
@@ -314,24 +355,26 @@ def main():
 
     # Gather inputs — flags win; otherwise prompt (interactive) or default (piped stdin).
     ns = args.namespace or prompt("Namespace", required=True)
-    script = args.script or prompt("Path to test script (launcher-style .py)", required=True)
-    script = os.path.expanduser(script)
-    if not os.path.isfile(script):
-        sys.exit(f"test script not found: {script}")
-    bucket = args.bucket or prompt("GPU bucket (2gpu/4gpu/8gpu)", default="2gpu")
-    if bucket not in BUCKETS:
-        sys.exit(f"unknown bucket '{bucket}' (choices: {', '.join(BUCKETS)})")
-    image = args.image or prompt("Image", default=IMAGE)
-    job_name = args.job_name or prompt("TrainJob name", default=f"symmem-{bucket}")
+    mod = args.module or prompt("Path to test module (.py file from the PyTorch distributed test suite)", required=True)
+    mod = os.path.expanduser(mod)
     script_args = args.script_args.split() if args.script_args else []
-    b = BUCKETS[bucket]
-    script_basename = os.path.basename(script)
+    mod_basename = os.path.basename(mod)
+    discover = DiscoverTests(mod_basename, args.suite)
+    mp_tests = discover.get_mp_tests()
+    mpc_tests = discover.get_mpc_tests()
+    
+    if not os.path.isfile(mod):
+        sys.exit(f"test script not found: {mod}")
+    ngpus = args.ngpus or prompt("Number of GPUs per node", default=2)
+    image = args.image or prompt("Image", default=IMAGE)
+    job_name = args.job_name or prompt("TrainJob name", default=f"xnode-test-{min_nodes}n-{ngpus}g")
+    b = BUCKETS[ngpus]
 
     info(f"\nSubmit plan{' (dry-run)' if args.dry_run else ''}:")
     info(f"  namespace   {ns}")
-    info(f"  script      {script}  ->  {WORKSPACE}/{script_basename}"
+    info(f"  module      {mod}  ->  {mod_basename}"
          + (f"  args={script_args}" if script_args else ""))
-    info(f"  bucket      {bucket}  ({b['gpus']} GPU/pod x 2 nodes, RCT {b['rct']})")
+    info(f"  total gpus    {ngpus * min_nodes}  ({b['gpus']} GPU/pod x {min_nodes} nodes, RCT {b['rct']})")
     info(f"  image       {image}")
     info(f"  dev PVC     {args.pvc or f'pytorch-py3-10-{ns} (runtime default)'}")
     info(f"  pull secret {args.pull_secret or '(runtime default)'}")
@@ -339,53 +382,61 @@ def main():
 
     if not args.dry_run:
         # Fail early with a clear message if setup hasn't been run for this namespace.
-        if not sh("oc", "-n", ns, "get", "trainingruntime", f"torch-cross-node-{bucket}",
+        if not sh("oc", "-n", ns, "get", "trainingruntime", f"{runtime_name(ngpus)}",
                   "--ignore-not-found", "-o", "name").strip():
-            sys.exit(f"TrainingRuntime torch-cross-node-{bucket} not found in {ns}. "
+            sys.exit(f"TrainingRuntime {runtime_name(ngpus)} not found in {ns}. "
                      f"Run:  ./setup-orchestrator.py --namespace {ns}")
 
-    # 1) pick symmetric buses (always shown — it's the useful pre-flight view)
-    buses = pick_buses(b["gpus"], args.min_nodes, args.buckets_order)
-    tj = trainjob_yaml(job_name, ns, bucket, image, script_basename, script_args,
-                       pvc=args.pvc, pull_secret=args.pull_secret)
-
-    if args.dry_run:
-        # stdout = the two manifests (RCT + TrainJob), so `submit ... --dry-run | oc apply -f -` works.
-        info("\n--- ResourceClaimTemplate (would stamp) ---")
-        print(rct_yaml(b["rct"], ns, buses).rstrip())
-        print("---")
-        info("--- TrainJob (would apply) ---")
-        print(tj.rstrip())
-        return
-
-    if not args.yes and not confirm("\nProceed with launch?"):
-        sys.exit("aborted")
-
-    # 2) publish the test script as the cross-node-test ConfigMap (mounted at /workspace)
-    cm = sh("oc", "create", "configmap", TEST_CM,
-            f"--from-file={script_basename}={script}",
-            "-n", ns, "--dry-run=client", "-o", "yaml")
-    sh("oc", "apply", "-f", "-", input=cm)
-    info(f"published ConfigMap/{TEST_CM} ({script_basename})")
-
-    # 3) (re)stamp the symmetric RCT. spec is IMMUTABLE -> delete+recreate; deleting the template
-    #    does NOT disturb ResourceClaims already generated from it.
-    sh("oc", "-n", ns, "delete", "resourceclaimtemplate", b["rct"], "--ignore-not-found")
-    sh("oc", "apply", "-f", "-", input=rct_yaml(b["rct"], ns, buses))
-    info(f"stamped ResourceClaimTemplate/{b['rct']} -> {', '.join(buses)}")
-
-    # 4) (re)launch the TrainJob
-    sh("oc", "-n", ns, "delete", "trainjob", job_name, "--ignore-not-found")
-    sh("oc", "apply", "-f", "-", input=tj)
-    info(f"launched TrainJob/{job_name}")
-
-    # The trainer controller creates a JobSet named after the TrainJob; the pods carry the JobSet
-    # label (not a trainer.kubeflow.org/* label), so that's what watch/logs must select on.
-    sel = f"jobset.sigs.k8s.io/jobset-name={job_name}"
-    info(f"\nWatch:  oc -n {ns} get pods -l {sel} -o wide -w")
-    info(f"Logs:   oc -n {ns} logs -f -l {sel} --max-log-requests 8")
-    info(f"Clean:  oc -n {ns} delete trainjob {job_name}")
-
+    min_nodes = args.min_nodes
+    buckets_order = args.buckets_order
+    pvc = args.pvc
+    pull_secret = args.pull_secret
+    dry_run = args.dry_run
+    yes = args.yes
+    
+    if len(mp_tests):
+        mp_config = (
+            config.HarnessConfig()
+            .module(mod.replace(".py", ""))
+            .suite(args.suite)
+        )
+        encoded_json_binary = mp_config.to_b64()
+        run(
+            min_nodes=min_nodes,
+            ngpus=ngpus,
+            buckets_order=buckets_order,
+            jobname=f"{job_name}_multiprocesstest",
+            ns=ns,
+            image=image,
+            run_binary="cross-node-mp",
+            script_args=encoded_json_binary,
+            pvc=pvc,
+            pull_secret=pull_secret,
+            dry_run=dry_run,
+            yes=yes
+        )
+    if len(mpc_tests):
+        mpc_config = (
+            config.HarnessConfig()
+            .module(mod.replace(".py", ""))
+            .suite(args.suite)
+        )
+        encoded_json_binary = mpc_config.to_b64()
+        run(
+            min_nodes=min_nodes,
+            ngpus=ngpus,
+            buckets_order=buckets_order,
+            jobname=f"{job_name}_multicontproctest",
+            ns=ns,
+            image=image,
+            run_binary="cross-node-mpc",
+            script_args=encoded_json_binary,
+            pvc=pvc,
+            pull_secret=pull_secret,
+            dry_run=dry_run,
+            yes=yes
+        )
+    
 
 if __name__ == "__main__":
     main()
