@@ -183,7 +183,7 @@ def pick_buses(gpus, min_nodes, order_arg):
                  f"    mutually free on: {', '.join(n.split('-')[-1] for n in combo)}")
             return chosen
     sys.exit(f"NO set of {gpus} bus(es) mutually free on {min_nodes} nodes. "
-             f"Free more GPUs, pick a smaller --bucket, or lower --min-nodes.")
+             f"Free more GPUs, pick a smaller --ngpus, or lower --min-nodes.")
 
 
 # ---- manifest rendering ----------------------------------------------------------------------
@@ -213,8 +213,11 @@ def rct_yaml(name, ns, buses):
 
 def trainjob_yaml(name, ns, min_nodes, ngpus, image, run_binary, script_args, pvc=None, pull_secret=None):
     # torchrun receives the workload path (+ optional args) as trainer.args; the entrypoint execs
-    # `torchrun ... railguard.py "$@"` and railguard runpy-runs argv[1].
-    args_yaml = f"{run_binary} --b64-cfg {script_args}"
+    # `torchrun ... railguard.py "$@"` and railguard runpy-runs argv[1]. trainer.args is []string,
+    # so render a YAML flow list — one element per token. script_args is base64 (no YAML-special
+    # chars), so it embeds safely as a bare scalar.
+    arg_items = [run_binary, "--b64-cfg", script_args]
+    args_yaml = "[" + ", ".join(arg_items) + "]"
     # Optionally swap the runtime's dev-home PVC (mounted at /home/devuser). Trainer v2 merges
     # podTemplateOverrides volumes BY NAME, so re-declaring DEV_PVC_VOLUME with a different
     # claimName replaces the runtime's default. This is how a user whose python/torch build lives
@@ -339,8 +342,7 @@ def main():
                     help="[--lab] lab pod count (default --min-nodes; one pod per node)")
     ap.add_argument("--destroy", action="store_true",
                     help="[--lab] tear the lab down: delete its StatefulSet, Service AND stamped RCT (frees GPUs)")
-    ap.add_argument("--suite", default="internode", type=str,
-                    help="Test suite to run (e.g., internode, intranode, mixed, subgroup)")
+    ap.add_argument("--pytorch-src", default="", type=str, help="Path to the local PyTorch directory.")
     ap.add_argument("--ucx", action="store_true", help="[--lab] inject UCX RDMA env (UCX_TLS + UCX_NET_DEVICES=<IB_DEV>:1) into the lab pods")
     args = ap.parse_args()
 
@@ -359,13 +361,12 @@ def main():
     mod = os.path.expanduser(mod)
     script_args = args.script_args.split() if args.script_args else []
     mod_basename = os.path.basename(mod)
-    discover = DiscoverTests(mod_basename, args.suite)
+    ngpus = args.ngpus or prompt("Number of GPUs per node", default=2)
+    min_nodes = args.min_nodes
+    discover = DiscoverTests(mod_basename.replace(".py", ""), ngpus=ngpus, nodes=min_nodes, pytorch_src=args.pytorch_src)
     mp_tests = discover.get_mp_tests()
     mpc_tests = discover.get_mpc_tests()
     
-    if not os.path.isfile(mod):
-        sys.exit(f"test script not found: {mod}")
-    ngpus = args.ngpus or prompt("Number of GPUs per node", default=2)
     image = args.image or prompt("Image", default=IMAGE)
     job_name = args.job_name or prompt("TrainJob name", default=f"xnode-test-{min_nodes}n-{ngpus}g")
     b = BUCKETS[ngpus]
@@ -387,7 +388,6 @@ def main():
             sys.exit(f"TrainingRuntime {runtime_name(ngpus)} not found in {ns}. "
                      f"Run:  ./setup-orchestrator.py --namespace {ns}")
 
-    min_nodes = args.min_nodes
     buckets_order = args.buckets_order
     pvc = args.pvc
     pull_secret = args.pull_secret
@@ -395,17 +395,18 @@ def main():
     yes = args.yes
     
     if len(mp_tests):
-        mp_config = (
-            config.HarnessConfig()
-            .module(mod.replace(".py", ""))
-            .suite(args.suite)
+        mp_config = config.HarnessConfig(
+            module=mod.replace(".py", ""),
+            ngpus=ngpus,
+            nodes=min_nodes,
+            pytorch_src=args.pytorch_src,
         )
         encoded_json_binary = mp_config.to_b64()
         run(
             min_nodes=min_nodes,
             ngpus=ngpus,
             buckets_order=buckets_order,
-            jobname=f"{job_name}_multiprocesstest",
+            job_name=f"{job_name}-multiprocesstest",
             ns=ns,
             image=image,
             run_binary="cross-node-mp",
@@ -416,17 +417,18 @@ def main():
             yes=yes
         )
     if len(mpc_tests):
-        mpc_config = (
-            config.HarnessConfig()
-            .module(mod.replace(".py", ""))
-            .suite(args.suite)
+        mpc_config = config.HarnessConfig(
+            module=mod.replace(".py", ""),
+            ngpus=ngpus,
+            nodes=min_nodes,
+            pytorch_src=args.pytorch_src,
         )
         encoded_json_binary = mpc_config.to_b64()
         run(
             min_nodes=min_nodes,
             ngpus=ngpus,
             buckets_order=buckets_order,
-            jobname=f"{job_name}_multicontproctest",
+            job_name=f"{job_name}-multicontproctest",
             ns=ns,
             image=image,
             run_binary="cross-node-mpc",

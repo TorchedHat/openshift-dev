@@ -142,6 +142,7 @@ spec:
                     app: {app}
                 spec:
                   serviceAccountName: {sa}
+                  restartPolicy: Never
                   imagePullSecrets:
                     - name: {pull_secret}
                   securityContext:
@@ -246,22 +247,21 @@ def main():
     ap.add_argument("--pull-secret", default=PULL_SECRET, help=f"image pull secret (default: {PULL_SECRET})")
     ap.add_argument("--sa", default=SA, help=f"ServiceAccount name (default: {SA})")
     ap.add_argument("--scc", default=SCC, help=f"SCC to bind (default: {SCC})")
-    ap.add_argument("--buckets", default="2gpu,4gpu,8gpu", help="comma list of runtimes to install")
     ap.add_argument("--with-default-rcts", action="store_true", help="also create default symmetric RCTs")
     ap.add_argument("--dry-run", action="store_true", help="print manifests, apply nothing")
     args = ap.parse_args()
 
     ns = args.namespace
     pvc = args.pvc or default_pvc(ns)
-    buckets = [b.strip() for b in args.buckets.split(",") if b.strip()]
+    buckets = list(range(1, 9))
     for b in buckets:
         if b not in BUCKETS:
-            sys.exit(f"unknown bucket '{b}' (choices: {', '.join(BUCKETS)})")
+            sys.exit(f"unknown bucket '{b}' (choices: {', '.join([str(k) for k in BUCKETS.keys()])})")
 
     info(f"Setting up torch-cross-node in namespace '{ns}'"
          f"{' (dry-run)' if args.dry_run else ''}")
     info(f"  PVC={pvc}  image={args.image}  SA={args.sa}  SCC={args.scc}  pull-secret={args.pull_secret}")
-    info(f"  runtimes: {', '.join(buckets)}\n")
+    info(f"  runtimes: {', '.join(map(str, buckets))}\n")
 
     if not args.dry_run:
         # Preflight sanity checks that produce clearer errors than a downstream pod failure.
@@ -320,7 +320,7 @@ def main():
     # 3) namespaced TrainingRuntimes
     for b in buckets:
         apply(runtime_yaml(b, ns, pvc, args.image, args.pull_secret, args.sa), args.dry_run)
-    info(f"[3/4] TrainingRuntimes: {', '.join('torch-cross-node-' + b for b in buckets)}")
+    info(f"[3/4] TrainingRuntimes: {', '.join(f'torch-cross-node-{b}' for b in buckets)}")
 
     # 4) optional default RCTs (submit-job.py re-stamps these per launch)
     if args.with_default_rcts:
