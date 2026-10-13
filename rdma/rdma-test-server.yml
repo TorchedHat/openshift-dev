@@ -16,7 +16,7 @@ spec:
       nodeName: pytorch-openshift-tjqvv-worker-3-h72vf
       containers:
         - name: server
-          image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0'
           command:
             - /bin/bash
             - -c

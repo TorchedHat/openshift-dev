@@ -65,7 +65,7 @@ import subprocess
 import sys
 from itertools import combinations
 
-IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.10"
+IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0"
 TEST_CM = "cross-node-test"          # test script mounted at /workspace in the pods
 WORKSPACE = "/workspace"
 DEV_PVC_VOLUME = "pytorch-eco-data"  # the runtime's dev-home volume (mounted at /home/devuser);

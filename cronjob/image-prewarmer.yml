@@ -22,11 +22,10 @@
 #
 # IMAGES (kept in sync with .github/workflows/*.yml)
 # --------------------------------------------------
-#   build-push.yml          dev:     py{3.10,3.11,3.12,3.13,3.14} x cuda{12.9,13.0}
-#                                     -> :py<V>           (cuda 12.9, no suffix)
-#                                     -> :py<V>-cuda13.0  (cuda 13.0)
-#   build-push-runtime.yml  runtime: cuda{12.9,13.0} -> :runtime , :runtime-cuda13.0
-# = 10 dev + 2 runtime = 12 tags. (:latest is an alias of :py3.10 and is skipped.)
+#   build-push.yml          dev:     py{3.11,3.12,3.13,3.14} x cuda{13.0,13.1}
+#                                     -> :py<V>-cuda<C>   (always explicit py + cuda)
+#   build-push-runtime.yml  runtime: cuda{13.0,13.1} -> :runtime-cuda<C>  (always explicit cuda)
+# = 8 dev + 2 runtime = 10 tags. (No non-explicit aliases are published.)
 # When the workflow matrix changes, update the TAGS list in the container args below.
 #
 # CRI-O PULL (privileged)
@@ -167,9 +166,9 @@ spec:
                   set -uo pipefail
                   REPO=quay.io/rh-ee-sampark/devcontainers
                   TAGS="
-                    py3.10 py3.11 py3.12 py3.13 py3.14
-                    py3.10-cuda13.0 py3.11-cuda13.0 py3.12-cuda13.0 py3.13-cuda13.0 py3.14-cuda13.0
-                    runtime runtime-cuda13.0
+                    py3.11-cuda13.0 py3.12-cuda13.0 py3.13-cuda13.0 py3.14-cuda13.0
+                    py3.11-cuda13.1 py3.12-cuda13.1 py3.13-cuda13.1 py3.14-cuda13.1
+                    runtime-cuda13.0 runtime-cuda13.1
                   "
                   # Extract the base64 "auth" token from the mounted dockerconfigjson (single-registry
                   # bot secret -> first/only "auth"). This IS what `crictl pull --auth` wants.

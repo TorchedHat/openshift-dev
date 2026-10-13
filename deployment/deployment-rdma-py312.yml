@@ -57,7 +57,7 @@ spec:
           emptyDir: {}
       initContainers:
         - name: init-container
-          image: 'quay.io/rh-ee-sampark/devcontainers:py3.12'
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.12-cuda13.0'
           imagePullPolicy: Always
           command:
             - /bin/bash
@@ -150,7 +150,7 @@ spec:
               mountPath: /home/devuser/.claude
           terminationMessagePolicy: File
           tty: true
-          image: 'quay.io/rh-ee-sampark/devcontainers:py3.12'
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.12-cuda13.0'
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
       dnsPolicy: ClusterFirst
