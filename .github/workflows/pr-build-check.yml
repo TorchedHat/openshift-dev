@@ -16,15 +16,7 @@ jobs:
         cuda-version: ['13.0', '13.1']
         include:
           - cuda-version: '13.0'
-            fedora-version: '42'
-            cudnn-version: '9.15.0.58'
-            cudnn-cuda-suffix: 'cuda13'
-            gcc-suffix: ''
           - cuda-version: '13.1'
-            fedora-version: '42'
-            cudnn-version: '9.15.0.58'
-            cudnn-cuda-suffix: 'cuda13'
-            gcc-suffix: ''
     steps:
       - uses: actions/checkout@v4
 

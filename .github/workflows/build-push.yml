@@ -17,14 +17,7 @@ jobs:
         cuda-version: ['13.0', '13.1']
         include:
           - cuda-version: '13.0'
-            fedora-version: '42'
-            cudnn-version: '9.15.0.58'
-            cudnn-cuda-suffix: 'cuda13'
-            gcc-suffix: ''
           - cuda-version: '13.1'
-            fedora-version: '42'
-            cudnn-version: '9.15.0.58'
-            cudnn-cuda-suffix: 'cuda13'
     steps:
       - uses: actions/checkout@v4
 
@@ -54,5 +47,4 @@ jobs:
             CUDNN_CUDA_SUFFIX=${{ matrix.cudnn-cuda-suffix }}
             GCC_SUFFIX=${{ matrix.gcc-suffix }}
           tags: |
-            quay.io/rh-ee-sampark/devcontainers:py${{ matrix.python-version }}${{ matrix.cuda-version != '12.9' && format('-cuda{0}', matrix.cuda-version) || '' }}
-            ${{ matrix.python-version == '3.10' && matrix.cuda-version == '12.9' && 'quay.io/rh-ee-sampark/devcontainers:latest' || '' }}
+            quay.io/rh-ee-sampark/devcontainers:py${{ matrix.python-version }}-cuda${{ matrix.cuda-version }}

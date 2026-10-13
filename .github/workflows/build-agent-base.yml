@@ -24,7 +24,6 @@ jobs:
         fedora-version: ['42']
         include:
           - fedora-version: '42'
-            gcc-suffix: ''
     steps:
       - uses: actions/checkout@v4
 
@@ -52,4 +51,3 @@ jobs:
             GCC_SUFFIX=${{ matrix.gcc-suffix }}
           tags: |
             quay.io/rh-ee-sampark/devcontainers:agent-py${{ matrix.python-version }}-fc${{ matrix.fedora-version }}
-            ${{ matrix.python-version == '3.11' && matrix.fedora-version == '41' && 'quay.io/rh-ee-sampark/devcontainers:agent' || '' }}

@@ -7,7 +7,7 @@ ARG CUDA_VERSION=13.0
 ARG CUDNN_VERSION=9.15.0.58
 ARG CUDNN_CUDA_SUFFIX=cuda13
 ARG NVSHMEM_VERSION=3.7.2
-ARG GCC_SUFFIX=-13
+ARG GCC_SUFFIX=''
 
 #Base image
 FROM quay.io/foundata/fedora${FEDORA_VERSION}-itt:latest
@@ -86,7 +86,9 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/y
        | tar xJ --strip-components=1 -C /usr/local \
          --wildcards '*/bin/clang-12' '*/bin/clang' '*/bin/clang++' '*/bin/clang-tidy' \
          '*/lib/clang/12*' '*/include/clang*' \
-    && ln -sf /usr/local/bin/clang-12 /usr/local/bin/clang-12.0
+    && ln -sf /usr/local/bin/clang-12 /usr/local/bin/clang-12.0 \
+    && curl -fL https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz \
+       | tar xz -C /usr/local/bin oc kubectl
 
 # Layer 2: CUDA toolkit + cuDNN + NVSHMEM
 RUN CUDA_PKG_VERSION=$(echo ${CUDA_VERSION} | tr '.' '-') \

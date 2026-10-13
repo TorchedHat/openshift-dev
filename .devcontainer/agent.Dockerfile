@@ -3,7 +3,7 @@ ARG OS_TYPE=x86_64
 ARG PY_VER=3.11
 ARG CONDA_VER=latest
 ARG FEDORA_VERSION=42
-ARG GCC_SUFFIX=-13
+ARG GCC_SUFFIX=''
 
 #Base image
 FROM quay.io/foundata/fedora${FEDORA_VERSION}-itt:latest
