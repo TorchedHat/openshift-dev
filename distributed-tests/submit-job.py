@@ -342,7 +342,6 @@ def main():
                     help="[--lab] lab pod count (default --min-nodes; one pod per node)")
     ap.add_argument("--destroy", action="store_true",
                     help="[--lab] tear the lab down: delete its StatefulSet, Service AND stamped RCT (frees GPUs)")
-    ap.add_argument("--pytorch-src", default="", type=str, help="Path to the local PyTorch directory.")
     ap.add_argument("--ucx", action="store_true", help="[--lab] inject UCX RDMA env (UCX_TLS + UCX_NET_DEVICES=<IB_DEV>:1) into the lab pods")
     args = ap.parse_args()
 
@@ -363,7 +362,7 @@ def main():
     mod_basename = os.path.basename(mod)
     ngpus = args.ngpus or prompt("Number of GPUs per node", default=2)
     min_nodes = args.min_nodes
-    discover = DiscoverTests(mod_basename.replace(".py", ""), ngpus=ngpus, nodes=min_nodes, pytorch_src=args.pytorch_src)
+    discover = DiscoverTests(mod_basename.replace(".py", ""), ngpus=ngpus, nodes=min_nodes)
     mp_tests = discover.get_mp_tests()
     mpc_tests = discover.get_mpc_tests()
     
@@ -398,8 +397,7 @@ def main():
         mp_config = config.HarnessConfig(
             module=mod.replace(".py", ""),
             ngpus=ngpus,
-            nodes=min_nodes,
-            pytorch_src=args.pytorch_src,
+            nodes=min_nodes
         )
         encoded_json_binary = mp_config.to_b64()
         run(
@@ -420,8 +418,7 @@ def main():
         mpc_config = config.HarnessConfig(
             module=mod.replace(".py", ""),
             ngpus=ngpus,
-            nodes=min_nodes,
-            pytorch_src=args.pytorch_src,
+            nodes=min_nodes
         )
         encoded_json_binary = mpc_config.to_b64()
         run(
