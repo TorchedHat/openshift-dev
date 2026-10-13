@@ -48,6 +48,5 @@ jobs:
           build-args: |
             PY_VER=${{ matrix.python-version }}
             FEDORA_VERSION=${{ matrix.fedora-version }}
-            GCC_SUFFIX=${{ matrix.gcc-suffix }}
           tags: |
             quay.io/rh-ee-sampark/devcontainers:agent-py${{ matrix.python-version }}-fc${{ matrix.fedora-version }}

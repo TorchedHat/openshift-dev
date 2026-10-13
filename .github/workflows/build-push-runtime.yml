@@ -47,9 +47,6 @@ jobs:
           file: .devcontainer/runtime.Dockerfile
           push: true
           build-args: |
-            FEDORA_VERSION=${{ matrix.fedora-version }}
             CUDA_VERSION=${{ matrix.cuda-version }}
-            CUDNN_VERSION=${{ matrix.cudnn-version }}
-            CUDNN_CUDA_SUFFIX=${{ matrix.cudnn-cuda-suffix }}
           tags: |
             quay.io/rh-ee-sampark/devcontainers:runtime-cuda${{ matrix.cuda-version }}

@@ -33,8 +33,4 @@ jobs:
           push: false
           build-args: |
             PY_VER=${{ matrix.python-version }}
-            FEDORA_VERSION=${{ matrix.fedora-version }}
             CUDA_VERSION=${{ matrix.cuda-version }}
-            CUDNN_VERSION=${{ matrix.cudnn-version }}
-            CUDNN_CUDA_SUFFIX=${{ matrix.cudnn-cuda-suffix }}
-            GCC_SUFFIX=${{ matrix.gcc-suffix }}
