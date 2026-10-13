@@ -81,13 +81,15 @@ inject_vertex_env() {
 }
 
 # create deployments for all python versions
-for PYVER in 3.10 3.11 3.12 3.13 3.14; do
+for PYVER in 3.11 3.12 3.13 3.14; do
   PYSLUG="py${PYVER//./}"
   PYDASH="py${PYVER//./-}"
+  CUDAVERSION="13.0"
   sed -e "s/<username>/$NAMESPACE/g" \
       -e "s/<pyslug>/$PYSLUG/g" \
       -e "s/<pydash>/$PYDASH/g" \
       -e "s/<pyversion>/$PYVER/g" \
+      -e "s/<cuda_version>/$CUDAVERSION/g" \
       deployment/deployment.yml \
     | inject_vertex_env \
     | oc apply -f -

@@ -43,7 +43,7 @@ spec:
           runAsGroup: 0
         initContainers:
         - name: init-container
-          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          image: quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0
           imagePullPolicy: Always
           command:
             - /bin/bash
@@ -58,7 +58,7 @@ spec:
             - name: init-script
               mountPath: /scripts
         - name: install-editable-ray
-          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          image: quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0
           imagePullPolicy: Always
           command:
             - /bin/bash
@@ -80,7 +80,7 @@ spec:
               mountPath: /home/devuser
         containers:
         - name: ray-head
-          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          image: quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0
           imagePullPolicy: Always
           resources:
             limits:
@@ -201,7 +201,7 @@ spec:
           runAsGroup: 0
         initContainers:
         - name: install-editable-ray
-          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          image: quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0
           imagePullPolicy: Always
           command:
             - /bin/bash
@@ -223,7 +223,7 @@ spec:
               mountPath: /home/devuser
         containers:
         - name: ray-cpu-worker
-          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          image: quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0
           imagePullPolicy: Always
           resources:
             limits:
@@ -316,7 +316,7 @@ spec:
           runAsGroup: 0
         initContainers:
         - name: install-editable-ray
-          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          image: quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0
           imagePullPolicy: Always
           command:
             - /bin/bash
@@ -338,7 +338,7 @@ spec:
               mountPath: /home/devuser
         containers:
         - name: ray-gpu-worker
-          image: quay.io/rh-ee-sampark/devcontainers:py3.10
+          image: quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0
           imagePullPolicy: Always
           resources:
             limits:
@@ -406,7 +406,7 @@ spec:
         volumes:
           - name: pytorch-eco-data
             persistentVolumeClaim:
-              claimName: pytorch-py3-10-<username>
+              claimName: pytorch-py3-11-<username>
           - name: gdbinit
             configMap:
               name: gdbinit

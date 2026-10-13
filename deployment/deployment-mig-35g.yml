@@ -32,7 +32,7 @@ spec:
             defaultMode: 0640
         - name: pytorch-eco-data
           persistentVolumeClaim:
-            claimName: pytorch-py3-10-<username>
+            claimName: pytorch-py3-11-<username>
         - name: bazelrc
           configMap:
             name: bazelrc
@@ -50,7 +50,7 @@ spec:
           emptyDir: {}
       initContainers:
         - name: init-container
-          image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0'
           command:
             - /bin/bash
             - /scripts/configure_data_dir.sh
@@ -113,7 +113,7 @@ spec:
               mountPath: /home/devuser/.claude
           terminationMessagePolicy: File
           tty: true
-          image: 'quay.io/rh-ee-sampark/devcontainers:py3.10'
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0'
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
       dnsPolicy: ClusterFirst

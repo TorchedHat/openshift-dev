@@ -133,7 +133,7 @@ disabled** (DRA is the sole GPU allocator).
 # common overrides (all optional):
 ./setup-orchestrator.py --namespace <namespace> \
     --pvc pytorch-py3-10-<namespace> \            # default; override for a differently-named PVC
-    --image quay.io/rh-ee-sampark/devcontainers:py3.10 \
+    --image quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0 \
     --pull-secret rh-ee-sampark-dev-bot-pull-secret \
     --buckets 2gpu,4gpu \                          # install a subset of runtimes
     --with-default-rcts \                          # pre-create default RCTs (submit re-stamps them)

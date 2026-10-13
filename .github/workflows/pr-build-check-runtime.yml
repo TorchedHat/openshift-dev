@@ -13,16 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ['12.9', '13.0']
+        cuda-version: ['13.0', '13.1']
         include:
-          - cuda-version: '12.9'
-            fedora-version: '41'
-            cudnn-version: '9.6.0.74'
-            cudnn-cuda-suffix: 'cuda12'
           - cuda-version: '13.0'
-            fedora-version: '42'
-            cudnn-version: '9.15.0.58'
-            cudnn-cuda-suffix: 'cuda13'
+          - cuda-version: '13.1'
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +32,4 @@ jobs:
           file: .devcontainer/runtime.Dockerfile
           push: false
           build-args: |
-            FEDORA_VERSION=${{ matrix.fedora-version }}
             CUDA_VERSION=${{ matrix.cuda-version }}
-            CUDNN_VERSION=${{ matrix.cudnn-version }}
-            CUDNN_CUDA_SUFFIX=${{ matrix.cudnn-cuda-suffix }}

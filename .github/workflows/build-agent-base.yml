@@ -21,10 +21,9 @@ jobs:
         # and a matching fedora -> gcc entry under include (fc41 -> -13,
         # fc42 -> '').
         python-version: ['3.11']
-        fedora-version: ['41']
+        fedora-version: ['42']
         include:
-          - fedora-version: '41'
-            gcc-suffix: '-13'
+          - fedora-version: '42'
     steps:
       - uses: actions/checkout@v4
 
@@ -49,7 +48,5 @@ jobs:
           build-args: |
             PY_VER=${{ matrix.python-version }}
             FEDORA_VERSION=${{ matrix.fedora-version }}
-            GCC_SUFFIX=${{ matrix.gcc-suffix }}
           tags: |
             quay.io/rh-ee-sampark/devcontainers:agent-py${{ matrix.python-version }}-fc${{ matrix.fedora-version }}
-            ${{ matrix.python-version == '3.11' && matrix.fedora-version == '41' && 'quay.io/rh-ee-sampark/devcontainers:agent' || '' }}

@@ -27,7 +27,7 @@ INPUTS
   REQUIRED:  --namespace / -n
   REQUESTED (sensible defaults):
      --pvc           dev PVC claim name           (default: pytorch-py3-10-<namespace>)
-     --image         dev container image          (default: quay.io/rh-ee-sampark/devcontainers:py3.10)
+     --image         dev container image          (default: quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0)
      --pull-secret   image pull secret name       (default: rh-ee-sampark-dev-bot-pull-secret)
      --sa            ServiceAccount name          (default: torch-cross-node)
      --scc           SecurityContextConstraints   (default: anyuid-ipc-lock)
@@ -59,7 +59,7 @@ import os
 import subprocess
 import sys
 
-IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.10"
+IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0"
 PULL_SECRET = "rh-ee-sampark-dev-bot-pull-secret"
 SA = "torch-cross-node"
 SCC = "anyuid-ipc-lock"
