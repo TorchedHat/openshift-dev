@@ -80,7 +80,7 @@ RUN curl -fLO --retry 3 --retry-delay 5 "https://github.com/conda-forge/miniforg
     && bash Miniforge3-Linux-${OS_TYPE}.sh -p /home/devuser/miniconda -b \
     && rm Miniforge3-Linux-${OS_TYPE}.sh \
     && /home/devuser/miniconda/bin/conda init \
-    && /home/devuser/miniconda/bin/conda install -c anaconda -y python=${PY_VER} gdb \
+    && /home/devuser/miniconda/bin/conda install -c conda-forge -y python=${PY_VER} gdb \
     && /home/devuser/miniconda/bin/conda clean -afy
 ENV PATH=/home/devuser/miniconda/bin:${PATH}
 
