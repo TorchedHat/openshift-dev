@@ -45,6 +45,7 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/y
         make \
         cmake \
         ninja-build \
+        clang-devel \
         ccache \
         gdb \
         vim \
@@ -82,11 +83,6 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/y
     && echo 'experimental-features = nix-command flakes' > /home/devuser/.config/nix/nix.conf \
     && mkdir -p -m 0700 /home/devuser/.ssh \
     && ssh-keyscan github.com >> /home/devuser/.ssh/known_hosts \
-    && curl -fL https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.1/clang+llvm-12.0.1-x86_64-linux-gnu-ubuntu-16.04.tar.xz \
-       | tar xJ --strip-components=1 -C /usr/local \
-         --wildcards '*/bin/clang-12' '*/bin/clang' '*/bin/clang++' '*/bin/clang-tidy' \
-         '*/lib/clang/12*' '*/include/clang*' \
-    && ln -sf /usr/local/bin/clang-12 /usr/local/bin/clang-12.0 \
     && curl -fL https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz \
        | tar xz -C /usr/local/bin oc kubectl
 
