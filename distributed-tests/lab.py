@@ -52,7 +52,7 @@ LAB_SIZING = {
 
 def default_pvc(ns):
     # Mirrors setup-orchestrator.py: the per-namespace dev PVC (NVSHMEM-enabled torch at /home/devuser).
-    return f"pytorch-py3-10-{ns}"
+    return f"pytorch-py3-11-{ns}"
 
 
 def svc_yaml(name, ns):
