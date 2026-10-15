@@ -118,8 +118,7 @@ spec:
       securityContext:
         runAsUser: 1000
         runAsGroup: 0
-        # RWX CephFS dev PVC (~500k files); OnRootMismatch skips the minutes-long recursive
-        # fsGroup chown when the volume root already has the right group.
+        fsGroup: 0
         fsGroupChangePolicy: OnRootMismatch
       # Force each replica onto a different node -> real internode RDMA path.
       affinity:
