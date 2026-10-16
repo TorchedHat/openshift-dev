@@ -300,6 +300,7 @@ def main():
                     help="[--lab] lab pod count (default --min-nodes; one pod per node)")
     ap.add_argument("--destroy", action="store_true",
                     help="[--lab] tear the lab down: delete its StatefulSet, Service AND stamped RCT (frees GPUs)")
+    ap.add_argument("--ucx", action="store_true", help="[--lab] inject UCX RDMA env (UCX_TLS + UCX_NET_DEVICES=<IB_DEV>:1) into the lab pods")
     args = ap.parse_args()
 
     # --lab: hand off to the persistent-lab path (its own inputs; no test script / TrainJob).

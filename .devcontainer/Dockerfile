@@ -68,6 +68,11 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg\n" > /etc/y
         libibverbs \
         librdmacm \
         perftest \
+        ucx \
+        ucx-devel \
+        ucx-ib \
+        ucx-rdmacm \
+        ucx-cma \
         tini \
     && dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo \
     && dnf install gh --repo gh-cli -y \
