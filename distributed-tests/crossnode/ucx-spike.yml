@@ -1,0 +1,157 @@
+# UCX-without-hostNetwork spike (issue #19)
+# =========================================
+# Question this answers: can a UCX workload use the RC/UD *RDMA* transports from a
+# NON-hostNetwork pod -- i.e. with ONLY the shared device plugin
+# (rdma/rdma_shared_device_a), keeping eth0/pod-IP for rendezvous -- or does UCX
+# genuinely need the host netdevs in /sys/class/net (which only hostNetwork gives)?
+#
+# The theory (see HARNESS-REFACTOR notes / issue #19): UCX only needs /sys/class/net
+# for `rdmacm`-driven address resolution. ucx_perftest uses its OWN out-of-band TCP
+# socket for wireup, so if we FORCE the IB transports (UCX_TLS=rc_v,ud_v) and point
+# UCX straight at the device (UCX_NET_DEVICES=mlx5_0:1), the rdmacm/netdev lookup is
+# bypassed entirely: OOB rides eth0 (pod net), the RC QP data path rides the RoCE
+# fabric via the GID table (already visible through the shared device plugin, exactly
+# like ib_write_bw and NCCL). If rc_v initializes, hostNetwork is NOT needed for UCX.
+#
+# NOTE: deliberately NO `hostNetwork: true` and NO nvidia.com/gpu here -- a RoCE RC
+# transport needs neither. Two pods pinned to different worker-3 nodes => real
+# cross-node RDMA path. Headless Services give each pod routable OVN pod-IP DNS for
+# the OOB handshake (proving rendezvous survives on the pod network).
+#
+# Prereq (one-time, per namespace -- IPC_LOCK cap for ibv_reg_mr mlock):
+#   oc adm policy add-scc-to-user anyuid-ipc-lock -z default -n default
+# (NOT the hostnetwork SCC -- that's what we're trying to avoid needing.)
+#
+# Update the two nodeName values if `oc get nodes -l node-role.kubernetes.io/worker=`
+# shows different workers. See rdma/README.md for the current node list.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ucx-spike-server
+  namespace: default
+  labels:
+    app: ucx-spike-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ucx-spike-server
+  template:
+    metadata:
+      labels:
+        app: ucx-spike-server
+    spec:
+      nodeName: pytorch-openshift-tjqvv-worker-3-h72vf
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 0
+      imagePullSecrets:
+        - name: rh-ee-sampark-dev-bot-pull-secret
+      containers:
+        - name: ucx
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0'
+          stdin: true
+          tty: true
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -x
+              # rdma-core + verbs utils + perftest + UCX. NOTE: on Fedora the UCX IB
+              # transport modules (uct_ib / rc/ud/dc) live in the SEPARATE `ucx-ib`
+              # subpackage -- base `ucx` has NO rdma transports, so install both ucx-ib
+              # and ucx-rdmacm or ucx_info shows only tcp/self/sm. ucx_perftest ships in
+              # base `ucx`.
+              sudo dnf install -y rdma-core libibverbs-utils perftest \
+                                  ucx ucx-devel ucx-ib ucx-rdmacm
+              echo "=== UCX binaries present ==="
+              command -v ucx_info ucx_perftest || true
+              echo "=== verbs devices (should list mlx5_* via shared device plugin) ==="
+              ls -l /dev/infiniband/ 2>&1 || true
+              ibv_devinfo | grep -E "hca_id|state|link_layer" || true
+              echo "=== netns check (NON-hostNetwork: expect only eth0 + lo, NO enp*) ==="
+              ls /sys/class/net/
+              echo "=== device->netdev symlink (points at host enp*, NOT in this netns) ==="
+              ls -l /sys/class/infiniband/mlx5_0/device/net/ 2>&1 || true
+              echo "Ready. See runbook: distributed-tests/crossnode/UCX-SPIKE.md"
+              sleep infinity
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          resources:
+            requests:
+              cpu: '1'
+              memory: 4Gi
+              rdma/rdma_shared_device_a: '1'
+            limits:
+              cpu: '2'
+              memory: 8Gi
+              rdma/rdma_shared_device_a: '1'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ucx-spike-server
+  namespace: default
+spec:
+  clusterIP: None            # headless -> DNS resolves to the routable OVN pod IP
+  publishNotReadyAddresses: true
+  selector:
+    app: ucx-spike-server
+  ports:
+    - name: oob
+      port: 13337            # ucx_perftest OOB handshake (rides eth0/pod net)
+      targetPort: 13337
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ucx-spike-client
+  namespace: default
+  labels:
+    app: ucx-spike-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ucx-spike-client
+  template:
+    metadata:
+      labels:
+        app: ucx-spike-client
+    spec:
+      nodeName: pytorch-openshift-tjqvv-worker-3-v72kj
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 0
+      imagePullSecrets:
+        - name: rh-ee-sampark-dev-bot-pull-secret
+      containers:
+        - name: ucx
+          image: 'quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0'
+          stdin: true
+          tty: true
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -x
+              sudo dnf install -y rdma-core libibverbs-utils perftest \
+                                  ucx ucx-devel ucx-ib ucx-rdmacm
+              command -v ucx_info ucx_perftest || true
+              ls /sys/class/net/
+              echo "Ready. See runbook: distributed-tests/crossnode/UCX-SPIKE.md"
+              sleep infinity
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          resources:
+            requests:
+              cpu: '1'
+              memory: 4Gi
+              rdma/rdma_shared_device_a: '1'
+            limits:
+              cpu: '2'
+              memory: 8Gi
+              rdma/rdma_shared_device_a: '1'

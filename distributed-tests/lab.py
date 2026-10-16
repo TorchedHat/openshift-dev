@@ -80,7 +80,7 @@ spec:
 """
 
 
-def lab_yaml(name, ns, rct, image, pvc, replicas, nproc, sizing, pull_secret):
+def lab_yaml(name, ns, rct, image, pvc, replicas, nproc, sizing, pull_secret, ucx):
     """A persistent per-node lab StatefulSet: `replicas` sleep-infinity pods, forced one-per-node via
     podAntiAffinity, each pinning the SAME bus-pinned symmetric RCT the picker just stamped -> same
     board -> same PIX mlx5 rail across nodes (identical placement to the TrainingRuntime, but
@@ -91,6 +91,11 @@ def lab_yaml(name, ns, rct, image, pvc, replicas, nproc, sizing, pull_secret):
     differs per pod, so the entrypoint derives it from the pod's ordinal hostname. Parameterized +
     namespace-agnostic (placed by submit-job.py's bus-picker)."""
     master_addr = f"{name}-0.{name}.{ns}.svc.cluster.local"
+    ucx_env = "" if not ucx else """
+            - name: UCX_TLS
+              value: rc,ud,sm,self
+            - name: UCX_NET_DEVICES
+              value: $(IB_DEV):1"""
     return f"""\
 apiVersion: apps/v1
 kind: StatefulSet
@@ -166,7 +171,7 @@ spec:
             - name: POD_NAME
               valueFrom:
                 fieldRef:
-                  fieldPath: metadata.name
+                  fieldPath: metadata.name{ucx_env}
           resources:
             # No nvidia.com/gpu -- the GPU comes from the DRA claim below.
             requests:
@@ -226,6 +231,8 @@ def submit_lab(args, sj):
     sj.info(f"  StatefulSet {lab_name}  (replicas={replicas}, one per node) + headless Service {lab_name}")
     sj.info(f"  rendezvous  PET_MASTER_ADDR={lab_name}-0.{lab_name}.{ns}.svc.cluster.local:29500  "
             f"NNODES={replicas} NPROC={b['gpus']} (NODE_RANK from pod ordinal)\n")
+    if args.ucx:
+        sj.info(f"  UCX         enabled  (UCX_TLS=rc,ud,sm,self  UCX_NET_DEVICES=mlx5_0:1)")
 
     if not args.dry_run:
         # Fail early with a clear message if setup hasn't been run for this namespace (the lab reuses
@@ -241,7 +248,7 @@ def submit_lab(args, sj):
     # 1) pick symmetric buses (same pre-flight view as a job launch)
     buses = sj.pick_buses(b["gpus"], args.min_nodes, args.buckets_order)
     svc = svc_yaml(lab_name, ns)
-    sts = lab_yaml(lab_name, ns, rct, image, pvc, replicas, b["gpus"], sizing, pull_secret)
+    sts = lab_yaml(lab_name, ns, rct, image, pvc, replicas, b["gpus"], sizing, pull_secret, args.ucx)
 
     if args.dry_run:
         # stdout = the three manifests (RCT + Service + StatefulSet), so
