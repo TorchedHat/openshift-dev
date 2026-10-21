@@ -13,7 +13,6 @@ spec:
       numProcPerNode: {ngpus}
   template:
     spec:
-      ttlSecondsAfterFinished: 1800
       replicatedJobs:
         - name: node
           template:
@@ -152,7 +151,6 @@ spec:
       numProcPerNode: {ngpus}
   template:
     spec:
-      ttlSecondsAfterFinished: 1800
       replicatedJobs:
         - name: node
           template:

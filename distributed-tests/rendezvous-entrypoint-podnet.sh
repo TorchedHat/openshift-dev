@@ -46,6 +46,10 @@ NPROC="${PET_NPROC_PER_NODE:?PET_NPROC_PER_NODE not set}"
 MASTER_ADDR="${PET_MASTER_ADDR:?PET_MASTER_ADDR not set}"   # rank-0 pod DNS -> routable pod IP
 MPORT="${PET_MASTER_PORT:-29500}"
 
+if [ "${NNODES:-1}" -gt 1 ]; then
+  export NVSHMEM_DISABLE_NVLS=1
+fi
+
 echo "[rz] podnet node_rank=$NODE_RANK/$NNODES nproc=$NPROC master=$MASTER_ADDR:$MPORT"
 
 # --- NVSHMEM / RDMA transport (see ../nvshmem/README.md for the why) ---
