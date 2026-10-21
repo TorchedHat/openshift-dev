@@ -63,6 +63,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from itertools import combinations
 
 from testharness import config
@@ -211,13 +212,21 @@ def rct_yaml(name, ns, buses):
             f"{reqs}")
 
 
-def trainjob_yaml(name, ns, min_nodes, ngpus, image, run_binary, script_args, pvc=None, pull_secret=None):
-    # torchrun receives the workload path (+ optional args) as trainer.args; the entrypoint execs
-    # `torchrun ... railguard.py "$@"` and railguard runpy-runs argv[1]. trainer.args is []string,
-    # so render a YAML flow list — one element per token. script_args is base64 (no YAML-special
-    # chars), so it embeds safely as a bare scalar.
-    arg_items = [run_binary, "--b64-cfg", script_args]
-    args_yaml = "[" + ", ".join(arg_items) + "]"
+def trainjob_yaml(
+        name,
+        ns,
+        min_nodes,
+        ngpus,
+        image,
+        mp_b64,
+        mpc_b64,
+        repo,
+        ref,
+        sha,
+        build_id,
+        pvc=None,
+        pull_secret=None
+    ):
     # Optionally swap the runtime's dev-home PVC (mounted at /home/devuser). Trainer v2 merges
     # podTemplateOverrides volumes BY NAME, so re-declaring DEV_PVC_VOLUME with a different
     # claimName replaces the runtime's default. This is how a user whose python/torch build lives
@@ -251,13 +260,32 @@ spec:
     image: {image}
     numNodes: {min_nodes}
     numProcPerNode: {ngpus}
-    args: {args_yaml}
+    env:
+      - name: MP_B64
+        value: "{mp_b64}"
+      - name: MPC_B64
+        value: "{mpc_b64}"
   podTemplateOverrides:
     - targetJobs:
         - name: node
       spec:
-{pull_secret_override}        volumes:
-{pvc_volume}        containers:
+{pull_secret_override}\
+        volumes:
+{pvc_volume}\
+        initContainers:
+          - name: build
+            env:
+              - name: TORCH_REPO
+                value: {repo}
+              - name: TORCH_REF
+                value: {ref}
+              - name: TORCH_SHA
+                value: {sha}
+              - name: BUILD_ID
+                value: {build_id}
+              - name: NNODES
+                value: "{min_nodes}"
+        containers:
           - name: node
 """
 
@@ -269,17 +297,22 @@ def run(
         job_name,
         ns,
         image,
-        run_binary,
-        script_args,
+        mp_b64,
+        mpc_b64,
         pvc,
         pull_secret,
+        repo,
+        ref,
+        sha,
+        build_id,
         dry_run,
         yes
     ):
     rct = BUCKETS[ngpus]["rct"]
     # 1. Pick symmetric buses (always shown)
     buses = pick_buses(ngpus, min_nodes, buckets_order)
-    tj = trainjob_yaml(job_name, ns, min_nodes, ngpus, image, run_binary, script_args,
+    tj = trainjob_yaml(job_name, ns, min_nodes, ngpus, image, mp_b64, mpc_b64,
+                       repo, ref, sha, build_id,
                        pvc=pvc, pull_secret=pull_secret)
 
     if dry_run:
@@ -313,6 +346,30 @@ def run(
     return
 
 
+def ensure_build_script_cm(ns, dry_run=False):
+    """Apply the build-script ConfigMap only when local file differes from what is in-cluster."""
+    local = open(os.path.join(HERE, "build-at-run.initcontainer.sh")).read()
+    raw  = sh("oc", "-n", ns, "get", "configmap", "torch-cross-node-build-script",
+              "--ignore-not-found", "-o", "json", check=False)
+
+    if raw.strip():
+        incluster = (json.loads(raw).get("data") or {}).get("build-at-run.initcontainer.sh")
+        if incluster == local:
+            info("build-script CM unchanged; skip apply")
+            return
+        info("build-script CM differs; updating...")
+    else:
+        info("build-script CM absent; creating...")
+    cm = sh("oc", "create", "configmap", "torch-cross-node-build-script",
+            f"--from-file=build-at-run.initcontainer.sh={os.path.join(HERE, 'build-at-run.initcontainer.sh')}",
+            "-n", ns, "--dry-run=client", "-o", "yaml")
+    if dry_run:
+        print(cm)
+        return
+    sh("oc", "apply", "-f", "-", input=cm)
+    return
+
+    
 def main():
     ap = argparse.ArgumentParser(description="Submit a cross-node TrainJob in a namespace.")
     ap.add_argument("--namespace", "-n", help="target namespace")
@@ -320,9 +377,10 @@ def main():
     ap.add_argument("--ngpus", type=int, choices=list(range(1, 9)), help="number of GPUs per node.")
     ap.add_argument("--image", help=f"dev container image (default {IMAGE})")
     ap.add_argument("--job-name", help="TrainJob name (default symmem-<bucket>)")
-    ap.add_argument("--script-args", default="", help="extra args passed after the script path")
     ap.add_argument("--min-nodes", type=int, default=2, help="buses mutually free on >= N nodes")
     ap.add_argument("--buckets-order", default=None, help="comma bus-ID priority order for the picker")
+    ap.add_argument("--pytorch-repo", type=str, help="PyTorch github url to clone from. Most likely your personal fork.")
+    ap.add_argument("--pytorch-ref", type=str, help="PyTorch branch to checkout of to run tests.")
     ap.add_argument("--dry-run", action="store_true", help="show matrix/pick/manifest, change nothing")
     ap.add_argument("--yes", "-y", action="store_true", help="don't prompt to confirm before launch")
     # --- persistent lab (see lab.py) ---
@@ -358,7 +416,6 @@ def main():
     ns = args.namespace or prompt("Namespace", required=True)
     mod = args.module or prompt("Path to test module (.py file from the PyTorch distributed test suite)", required=True)
     mod = os.path.expanduser(mod)
-    script_args = args.script_args.split() if args.script_args else []
     mod_basename = os.path.basename(mod)
     ngpus = args.ngpus or prompt("Number of GPUs per node", default=2)
     min_nodes = args.min_nodes
@@ -372,8 +429,7 @@ def main():
 
     info(f"\nSubmit plan{' (dry-run)' if args.dry_run else ''}:")
     info(f"  namespace   {ns}")
-    info(f"  module      {mod}  ->  {mod_basename}"
-         + (f"  args={script_args}" if script_args else ""))
+    info(f"  module      {mod}  ->  {mod_basename}")
     info(f"  total gpus    {ngpus * min_nodes}  ({b['gpus']} GPU/pod x {min_nodes} nodes, RCT {b['rct']})")
     info(f"  image       {image}")
     info(f"  dev PVC     {args.pvc or f'pytorch-py3-10-{ns} (runtime default)'}")
@@ -387,54 +443,47 @@ def main():
             sys.exit(f"TrainingRuntime {runtime_name(ngpus)} not found in {ns}. "
                      f"Run:  ./setup-orchestrator.py --namespace {ns}")
 
+    # check if build script is different
+    ensure_build_script_cm(ns=ns, dry_run=args.dry_run)
+
     buckets_order = args.buckets_order
     pvc = args.pvc
     pull_secret = args.pull_secret
     dry_run = args.dry_run
     yes = args.yes
-    
-    if len(mp_tests):
-        mp_config = config.HarnessConfig(
-            module=mod.replace(".py", ""),
-            ngpus=ngpus,
-            nodes=min_nodes
-        )
-        encoded_json_binary = mp_config.to_b64()
-        run(
-            min_nodes=min_nodes,
-            ngpus=ngpus,
-            buckets_order=buckets_order,
-            job_name=f"{job_name}-multiprocesstest",
-            ns=ns,
-            image=image,
-            run_binary="cross-node-mp",
-            script_args=encoded_json_binary,
-            pvc=pvc,
-            pull_secret=pull_secret,
-            dry_run=dry_run,
-            yes=yes
-        )
-    if len(mpc_tests):
-        mpc_config = config.HarnessConfig(
-            module=mod.replace(".py", ""),
-            ngpus=ngpus,
-            nodes=min_nodes
-        )
-        encoded_json_binary = mpc_config.to_b64()
-        run(
-            min_nodes=min_nodes,
-            ngpus=ngpus,
-            buckets_order=buckets_order,
-            job_name=f"{job_name}-multicontproctest",
-            ns=ns,
-            image=image,
-            run_binary="cross-node-mpc",
-            script_args=encoded_json_binary,
-            pvc=pvc,
-            pull_secret=pull_secret,
-            dry_run=dry_run,
-            yes=yes
-        )
+
+    repo = args.pytorch_repo
+    ref = args.pytorch_ref
+    sha = sh("git", "ls-remote", repo, ref).split()[0]
+    build_id = f"{job_name}-{sha[:12]}-{uuid.uuid4().hex[:8]}"
+
+    cfg = config.HarnessConfig(
+        module=mod.replace(".py", ""),
+        ngpus=ngpus,
+        nodes=min_nodes
+    )
+    blob = cfg.to_b64()
+    mp_b64 = blob if len(mp_tests) else ""
+    mpc_b64 = blob if len(mpc_tests) else ""
+
+    run(
+        min_nodes=min_nodes,
+        ngpus=ngpus,
+        buckets_order=buckets_order,
+        job_name=job_name,
+        ns=ns,
+        image=image,
+        mp_b64=mp_b64,
+        mpc_b64=mpc_b64,
+        pvc=pvc,
+        pull_secret=pull_secret,
+        repo=repo,
+        ref=ref,
+        sha=sha,
+        build_id=build_id,
+        dry_run=dry_run,
+        yes=yes
+    )
     
 
 if __name__ == "__main__":

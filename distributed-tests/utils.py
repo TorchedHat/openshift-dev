@@ -17,6 +17,10 @@ def runtime_name(n):
     return f"torch-xnode-{n}gpu"
 
 
+def runtime_dev_name(n):
+    return f"torch-xnode-{n}gpu-dev"
+
+
 # bucket -> GPUs per pod (== numProcPerNode; numNodes is always 2) + the DRA claim template it
 # references + per-pod CPU/mem sizing. All buckets are 2 nodes (internode RDMA fabric test).
 BUCKETS = {n: bucket(n) for n in range(1, 9)}
