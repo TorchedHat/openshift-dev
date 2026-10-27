@@ -67,7 +67,6 @@ import uuid
 from itertools import combinations
 
 from testharness import config
-from testharness.discovery import DiscoverTests
 from utils import BUCKETS, runtime_name
 
 IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0"
@@ -265,6 +264,8 @@ spec:
         value: "{mp_b64}"
       - name: MPC_B64
         value: "{mpc_b64}"
+      - name: NVSHMEM_MAX_TEAMS
+        value: "1024"
   podTemplateOverrides:
     - targetJobs:
         - name: node
@@ -375,7 +376,7 @@ def main():
     ap.add_argument("--namespace", "-n", help="target namespace")
     ap.add_argument("--module", help="Upstream PyTorch distributed test python module.")
     ap.add_argument("--ngpus", type=int, choices=list(range(1, 9)), help="number of GPUs per node.")
-    ap.add_argument("--image", help=f"dev container image (default {IMAGE})")
+    ap.add_argument("--image", type=str, default=IMAGE, help=f"dev container image (default {IMAGE})")
     ap.add_argument("--job-name", help="TrainJob name (default symmem-<bucket>)")
     ap.add_argument("--min-nodes", type=int, default=2, help="buses mutually free on >= N nodes")
     ap.add_argument("--buckets-order", default=None, help="comma bus-ID priority order for the picker")
@@ -419,11 +420,8 @@ def main():
     mod_basename = os.path.basename(mod)
     ngpus = args.ngpus or prompt("Number of GPUs per node", default=2)
     min_nodes = args.min_nodes
-    discover = DiscoverTests(mod_basename.replace(".py", ""), ngpus=ngpus, nodes=min_nodes)
-    mp_tests = discover.get_mp_tests()
-    mpc_tests = discover.get_mpc_tests()
     
-    image = args.image or prompt("Image", default=IMAGE)
+    image = args.image
     job_name = args.job_name or prompt("TrainJob name", default=f"xnode-test-{min_nodes}n-{ngpus}g")
     b = BUCKETS[ngpus]
 
@@ -463,8 +461,6 @@ def main():
         nodes=min_nodes
     )
     blob = cfg.to_b64()
-    mp_b64 = blob if len(mp_tests) else ""
-    mpc_b64 = blob if len(mpc_tests) else ""
 
     run(
         min_nodes=min_nodes,
@@ -473,8 +469,8 @@ def main():
         job_name=job_name,
         ns=ns,
         image=image,
-        mp_b64=mp_b64,
-        mpc_b64=mpc_b64,
+        mp_b64=blob,
+        mpc_b64=blob,
         pvc=pvc,
         pull_secret=pull_secret,
         repo=repo,
