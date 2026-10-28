@@ -63,21 +63,15 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from itertools import combinations
 
+from testharness import config
+from utils import BUCKETS, runtime_name
+
 IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0"
-TEST_CM = "cross-node-test"          # test script mounted at /workspace in the pods
-WORKSPACE = "/workspace"
 DEV_PVC_VOLUME = "pytorch-eco-data"  # the runtime's dev-home volume (mounted at /home/devuser);
                                      # re-declare it in podTemplateOverrides to swap the PVC
-
-# bucket -> GPUs per pod + the symmetric ResourceClaimTemplate the runtime references. Must match
-# setup-orchestrator.py's BUCKETS (the runtimes reference these RCT names by hand).
-BUCKETS = {
-    "2gpu": dict(gpus=1, rct="symmetric-gpu-run"),
-    "4gpu": dict(gpus=2, rct="symmetric-gpu-run-2"),
-    "8gpu": dict(gpus=4, rct="symmetric-gpu-run-4"),
-}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -189,7 +183,7 @@ def pick_buses(gpus, min_nodes, order_arg):
                  f"    mutually free on: {', '.join(n.split('-')[-1] for n in combo)}")
             return chosen
     sys.exit(f"NO set of {gpus} bus(es) mutually free on {min_nodes} nodes. "
-             f"Free more GPUs, pick a smaller --bucket, or lower --min-nodes.")
+             f"Free more GPUs, pick a smaller --ngpus, or lower --min-nodes.")
 
 
 # ---- manifest rendering ----------------------------------------------------------------------
@@ -217,12 +211,21 @@ def rct_yaml(name, ns, buses):
             f"{reqs}")
 
 
-def trainjob_yaml(name, ns, bucket, image, script_basename, script_args, pvc=None, pull_secret=None):
-    # torchrun receives the workload path (+ optional args) as trainer.args; the entrypoint execs
-    # `torchrun ... railguard.py "$@"` and railguard runpy-runs argv[1]. The script is mounted from
-    # the cross-node-test ConfigMap at /workspace by the podTemplateOverrides below.
-    argv = [f"{WORKSPACE}/{script_basename}"] + list(script_args)
-    args_yaml = "[" + ", ".join(f'"{a}"' for a in argv) + "]"
+def trainjob_yaml(
+        name,
+        ns,
+        min_nodes,
+        ngpus,
+        image,
+        mp_b64,
+        mpc_b64,
+        repo,
+        ref,
+        sha,
+        build_id,
+        pvc=None,
+        pull_secret=None
+    ):
     # Optionally swap the runtime's dev-home PVC (mounted at /home/devuser). Trainer v2 merges
     # podTemplateOverrides volumes BY NAME, so re-declaring DEV_PVC_VOLUME with a different
     # claimName replaces the runtime's default. This is how a user whose python/torch build lives
@@ -251,36 +254,134 @@ spec:
     # namespaced TrainingRuntime (installed by setup-orchestrator.py) — NOT the cluster-scoped
     # ClusterTrainingRuntime. TrainJob must be in the same namespace as the runtime.
     kind: TrainingRuntime
-    name: torch-cross-node-{bucket}
+    name: {runtime_name(ngpus)}
   trainer:
     image: {image}
-    args: {args_yaml}
+    numNodes: {min_nodes}
+    numProcPerNode: {ngpus}
+    env:
+      - name: MP_B64
+        value: "{mp_b64}"
+      - name: MPC_B64
+        value: "{mpc_b64}"
+      - name: NVSHMEM_MAX_TEAMS
+        value: "1024"
   podTemplateOverrides:
     - targetJobs:
         - name: node
       spec:
-{pull_secret_override}        volumes:
-          - name: test-script
-            configMap:
-              name: {TEST_CM}
-{pvc_volume}        containers:
+{pull_secret_override}\
+        volumes:
+{pvc_volume}\
+        initContainers:
+          - name: build
+            env:
+              - name: TORCH_REPO
+                value: {repo}
+              - name: TORCH_REF
+                value: {ref}
+              - name: TORCH_SHA
+                value: {sha}
+              - name: BUILD_ID
+                value: {build_id}
+              - name: NNODES
+                value: "{min_nodes}"
+        containers:
           - name: node
-            volumeMounts:
-              - name: test-script
-                mountPath: {WORKSPACE}
 """
 
 
+def run(
+        min_nodes,
+        ngpus,
+        buckets_order,
+        job_name,
+        ns,
+        image,
+        mp_b64,
+        mpc_b64,
+        pvc,
+        pull_secret,
+        repo,
+        ref,
+        sha,
+        build_id,
+        dry_run,
+        yes
+    ):
+    rct = BUCKETS[ngpus]["rct"]
+    # 1. Pick symmetric buses (always shown)
+    buses = pick_buses(ngpus, min_nodes, buckets_order)
+    tj = trainjob_yaml(job_name, ns, min_nodes, ngpus, image, mp_b64, mpc_b64,
+                       repo, ref, sha, build_id,
+                       pvc=pvc, pull_secret=pull_secret)
+
+    if dry_run:
+        info("\n--- ResourceClaimTemplate (would stamp) ---")
+        print(rct_yaml(rct, ns, buses).rstrip())
+        print("---")
+        info("--- TrainJob (would apply) ---")
+        print(tj.rstrip())
+        return
+
+    if not yes and not confirm("\nProceed with launch?"):
+        sys.exit("aborted")
+
+    # 2. (re)stamp the symmetric RCT. spec is immutable so delete and recreate.
+    sh("oc", "-n", ns, "delete", "resourceclaimtemplate", rct, "--ignore-not-found")
+    sh("oc", "apply", "-f", "-", input=rct_yaml(rct, ns, buses))
+    info(f"stamped ResourceClaimTemplate/{rct} -> {'. '.join(buses)}")
+
+    # 3. (re)launch the TrainJob
+    sh("oc", "-n", ns, "delete", "trainjob", job_name, "--ignore-not-found")
+    sh("oc", "apply", "-f", "-", input=tj)
+    info(f"launched TrainJob/{job_name}")
+
+    # The trainer controller creates a JobSet named after the TrainJob; the pods carry the JobSet
+    # label, so select this label.
+    sel = f"jobset.sigs.k8s.io/jobset-name={job_name}"
+    info(f"\nWatch:  oc -n {ns} get pods -l {sel} -o wide -w")
+    info(f"Logs:   oc -n {ns} logs -f -l {sel} --max-log-requests 8")
+    info(f"Clean:  oc -n {ns} delete trainjob {job_name}")
+
+    return
+
+
+def ensure_build_script_cm(ns, dry_run=False):
+    """Apply the build-script ConfigMap only when local file differes from what is in-cluster."""
+    local = open(os.path.join(HERE, "build-at-run.initcontainer.sh")).read()
+    raw  = sh("oc", "-n", ns, "get", "configmap", "torch-cross-node-build-script",
+              "--ignore-not-found", "-o", "json", check=False)
+
+    if raw.strip():
+        incluster = (json.loads(raw).get("data") or {}).get("build-at-run.initcontainer.sh")
+        if incluster == local:
+            info("build-script CM unchanged; skip apply")
+            return
+        info("build-script CM differs; updating...")
+    else:
+        info("build-script CM absent; creating...")
+    cm = sh("oc", "create", "configmap", "torch-cross-node-build-script",
+            f"--from-file=build-at-run.initcontainer.sh={os.path.join(HERE, 'build-at-run.initcontainer.sh')}",
+            "-n", ns, "--dry-run=client", "-o", "yaml")
+    if dry_run:
+        print(cm)
+        return
+    sh("oc", "apply", "-f", "-", input=cm)
+    return
+
+    
 def main():
     ap = argparse.ArgumentParser(description="Submit a cross-node TrainJob in a namespace.")
     ap.add_argument("--namespace", "-n", help="target namespace")
-    ap.add_argument("--script", help="path to launcher-style test .py")
-    ap.add_argument("--bucket", choices=list(BUCKETS), help="GPU bucket (2gpu/4gpu/8gpu)")
-    ap.add_argument("--image", help=f"dev container image (default {IMAGE})")
+    ap.add_argument("--module", help="Upstream PyTorch distributed test python module.")
+    ap.add_argument("--ngpus", type=int, choices=list(range(1, 9)), help="number of GPUs per node.")
+    ap.add_argument("--image", type=str, default=IMAGE, help=f"dev container image (default {IMAGE})")
     ap.add_argument("--job-name", help="TrainJob name (default symmem-<bucket>)")
-    ap.add_argument("--script-args", default="", help="extra args passed after the script path")
     ap.add_argument("--min-nodes", type=int, default=2, help="buses mutually free on >= N nodes")
     ap.add_argument("--buckets-order", default=None, help="comma bus-ID priority order for the picker")
+    ap.add_argument("--pytorch-repo", type=str, help="PyTorch github url to clone from. Most likely your personal fork.")
+    ap.add_argument("--pytorch-ref", type=str, help="PyTorch branch to checkout of to run tests.")
     ap.add_argument("--dry-run", action="store_true", help="show matrix/pick/manifest, change nothing")
     ap.add_argument("--yes", "-y", action="store_true", help="don't prompt to confirm before launch")
     # --- persistent lab (see lab.py) ---
@@ -314,24 +415,20 @@ def main():
 
     # Gather inputs — flags win; otherwise prompt (interactive) or default (piped stdin).
     ns = args.namespace or prompt("Namespace", required=True)
-    script = args.script or prompt("Path to test script (launcher-style .py)", required=True)
-    script = os.path.expanduser(script)
-    if not os.path.isfile(script):
-        sys.exit(f"test script not found: {script}")
-    bucket = args.bucket or prompt("GPU bucket (2gpu/4gpu/8gpu)", default="2gpu")
-    if bucket not in BUCKETS:
-        sys.exit(f"unknown bucket '{bucket}' (choices: {', '.join(BUCKETS)})")
-    image = args.image or prompt("Image", default=IMAGE)
-    job_name = args.job_name or prompt("TrainJob name", default=f"symmem-{bucket}")
-    script_args = args.script_args.split() if args.script_args else []
-    b = BUCKETS[bucket]
-    script_basename = os.path.basename(script)
+    mod = args.module or prompt("Path to test module (.py file from the PyTorch distributed test suite)", required=True)
+    mod = os.path.expanduser(mod)
+    mod_basename = os.path.basename(mod)
+    ngpus = args.ngpus or prompt("Number of GPUs per node", default=2)
+    min_nodes = args.min_nodes
+    
+    image = args.image
+    job_name = args.job_name or prompt("TrainJob name", default=f"xnode-test-{min_nodes}n-{ngpus}g")
+    b = BUCKETS[ngpus]
 
     info(f"\nSubmit plan{' (dry-run)' if args.dry_run else ''}:")
     info(f"  namespace   {ns}")
-    info(f"  script      {script}  ->  {WORKSPACE}/{script_basename}"
-         + (f"  args={script_args}" if script_args else ""))
-    info(f"  bucket      {bucket}  ({b['gpus']} GPU/pod x 2 nodes, RCT {b['rct']})")
+    info(f"  module      {mod}  ->  {mod_basename}")
+    info(f"  total gpus    {ngpus * min_nodes}  ({b['gpus']} GPU/pod x {min_nodes} nodes, RCT {b['rct']})")
     info(f"  image       {image}")
     info(f"  dev PVC     {args.pvc or f'pytorch-py3-10-{ns} (runtime default)'}")
     info(f"  pull secret {args.pull_secret or '(runtime default)'}")
@@ -339,53 +436,51 @@ def main():
 
     if not args.dry_run:
         # Fail early with a clear message if setup hasn't been run for this namespace.
-        if not sh("oc", "-n", ns, "get", "trainingruntime", f"torch-cross-node-{bucket}",
+        if not sh("oc", "-n", ns, "get", "trainingruntime", f"{runtime_name(ngpus)}",
                   "--ignore-not-found", "-o", "name").strip():
-            sys.exit(f"TrainingRuntime torch-cross-node-{bucket} not found in {ns}. "
+            sys.exit(f"TrainingRuntime {runtime_name(ngpus)} not found in {ns}. "
                      f"Run:  ./setup-orchestrator.py --namespace {ns}")
 
-    # 1) pick symmetric buses (always shown — it's the useful pre-flight view)
-    buses = pick_buses(b["gpus"], args.min_nodes, args.buckets_order)
-    tj = trainjob_yaml(job_name, ns, bucket, image, script_basename, script_args,
-                       pvc=args.pvc, pull_secret=args.pull_secret)
+    # check if build script is different
+    ensure_build_script_cm(ns=ns, dry_run=args.dry_run)
 
-    if args.dry_run:
-        # stdout = the two manifests (RCT + TrainJob), so `submit ... --dry-run | oc apply -f -` works.
-        info("\n--- ResourceClaimTemplate (would stamp) ---")
-        print(rct_yaml(b["rct"], ns, buses).rstrip())
-        print("---")
-        info("--- TrainJob (would apply) ---")
-        print(tj.rstrip())
-        return
+    buckets_order = args.buckets_order
+    pvc = args.pvc
+    pull_secret = args.pull_secret
+    dry_run = args.dry_run
+    yes = args.yes
 
-    if not args.yes and not confirm("\nProceed with launch?"):
-        sys.exit("aborted")
+    repo = args.pytorch_repo
+    ref = args.pytorch_ref
+    sha = sh("git", "ls-remote", repo, ref).split()[0]
+    build_id = f"{job_name}-{sha[:12]}-{uuid.uuid4().hex[:8]}"
 
-    # 2) publish the test script as the cross-node-test ConfigMap (mounted at /workspace)
-    cm = sh("oc", "create", "configmap", TEST_CM,
-            f"--from-file={script_basename}={script}",
-            "-n", ns, "--dry-run=client", "-o", "yaml")
-    sh("oc", "apply", "-f", "-", input=cm)
-    info(f"published ConfigMap/{TEST_CM} ({script_basename})")
+    cfg = config.HarnessConfig(
+        module=mod.replace(".py", ""),
+        ngpus=ngpus,
+        nodes=min_nodes
+    )
+    blob = cfg.to_b64()
 
-    # 3) (re)stamp the symmetric RCT. spec is IMMUTABLE -> delete+recreate; deleting the template
-    #    does NOT disturb ResourceClaims already generated from it.
-    sh("oc", "-n", ns, "delete", "resourceclaimtemplate", b["rct"], "--ignore-not-found")
-    sh("oc", "apply", "-f", "-", input=rct_yaml(b["rct"], ns, buses))
-    info(f"stamped ResourceClaimTemplate/{b['rct']} -> {', '.join(buses)}")
-
-    # 4) (re)launch the TrainJob
-    sh("oc", "-n", ns, "delete", "trainjob", job_name, "--ignore-not-found")
-    sh("oc", "apply", "-f", "-", input=tj)
-    info(f"launched TrainJob/{job_name}")
-
-    # The trainer controller creates a JobSet named after the TrainJob; the pods carry the JobSet
-    # label (not a trainer.kubeflow.org/* label), so that's what watch/logs must select on.
-    sel = f"jobset.sigs.k8s.io/jobset-name={job_name}"
-    info(f"\nWatch:  oc -n {ns} get pods -l {sel} -o wide -w")
-    info(f"Logs:   oc -n {ns} logs -f -l {sel} --max-log-requests 8")
-    info(f"Clean:  oc -n {ns} delete trainjob {job_name}")
-
+    run(
+        min_nodes=min_nodes,
+        ngpus=ngpus,
+        buckets_order=buckets_order,
+        job_name=job_name,
+        ns=ns,
+        image=image,
+        mp_b64=blob,
+        mpc_b64=blob,
+        pvc=pvc,
+        pull_secret=pull_secret,
+        repo=repo,
+        ref=ref,
+        sha=sha,
+        build_id=build_id,
+        dry_run=dry_run,
+        yes=yes
+    )
+    
 
 if __name__ == "__main__":
     main()

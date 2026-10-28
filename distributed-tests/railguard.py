@@ -54,6 +54,7 @@ with nvidia-smi/topo GPU index i. Skips pinning (warn + proceed) if topology is 
 """
 import os
 import re
+import shutil
 import sys
 import runpy
 import subprocess
@@ -162,9 +163,10 @@ def main():
                          "(usage: railguard.py <script> [args...])\n")
         os._exit(3)
     script = sys.argv[1]
+    resolved = shutil.which(script) or script
     enforce()
     sys.argv = [script] + sys.argv[2:]
-    runpy.run_path(script, run_name="__main__")
+    runpy.run_path(resolved, run_name="__main__")
 
 
 if __name__ == "__main__":

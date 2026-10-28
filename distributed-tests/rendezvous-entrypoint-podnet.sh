@@ -46,6 +46,10 @@ NPROC="${PET_NPROC_PER_NODE:?PET_NPROC_PER_NODE not set}"
 MASTER_ADDR="${PET_MASTER_ADDR:?PET_MASTER_ADDR not set}"   # rank-0 pod DNS -> routable pod IP
 MPORT="${PET_MASTER_PORT:-29500}"
 
+if [ "${NNODES:-1}" -gt 1 ]; then
+  export NVSHMEM_DISABLE_NVLS=1
+fi
+
 echo "[rz] podnet node_rank=$NODE_RANK/$NNODES nproc=$NPROC master=$MASTER_ADDR:$MPORT"
 
 # --- NVSHMEM / RDMA transport (see ../nvshmem/README.md for the why) ---
@@ -69,6 +73,25 @@ export NVSHMEM_IB_ADDR_FAMILY="${NVSHMEM_IB_ADDR_FAMILY:-AF_INET}"
 # (local rank 0's) for the whole pod, so a multi-GPU world stays on one routable /16. Cross-node
 # rail SYMMETRY is guaranteed upstream by DRA bus-pinning (both pods pin the same bus -> same board
 # -> same rail), so railguard no longer needs a cross-node mismatch check. See railguard.py.
+
+run_suite() { # $1=binary $2=b64 config
+  local binary="$1" blob="$2"
+  [ -z "$blob" ] && return 0      # suite had no tests so skip
+  echo "[rz] === $binary ==="
+  torchrun \
+    --nnodes="$NNODES" --node_rank="$NODE_RANK" --nproc_per_node="$NPROC" \
+    --master_addr="$MASTER_ADDR" --master_port="$MPORT" \
+    --rdzv_conf=timeout=120 \
+    /opt/rz/railguard.py "$binary" --b64-cfg "$blob"
+}
+
+if [ -n "${MP_B64:-}" ] || [ -n "${MPC_B64:-}" ]; then
+  rc=0
+  run_suite cross-node-mp "${MP_B64:-}" || rc=$?
+  run_suite cross-node-mpc "${MPC_B64:-}" || rc=$?
+  exit $rc
+fi
+
 exec torchrun \
   --nnodes="$NNODES" --node_rank="$NODE_RANK" --nproc_per_node="$NPROC" \
   --master_addr="$MASTER_ADDR" --master_port="$MPORT" \
