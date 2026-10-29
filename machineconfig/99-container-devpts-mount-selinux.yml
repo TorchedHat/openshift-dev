@@ -1,0 +1,56 @@
+# Persist an SELinux policy module that lets container_t mount a fresh devpts
+# instance. Codex's sandbox launches bubblewrap with `--dev /dev`, which mounts a
+# NEW devpts (labeled devpts_t:s0). OpenShift's container_t domain has no
+# `filesystem { mount }` rule for devpts_t, so the mount is denied (EPERM):
+#
+#   avc: denied { mount } comm="bwrap"
+#     scontext=...:container_t:s0:cNN,cMM
+#     tcontext=system_u:object_r:devpts_t:s0 tclass=filesystem
+#
+# (Bind-mounting the pod's existing /dev/pts works because it is pre-labeled
+# container_file_t via the `context=` mount option, so no `mount` perm is needed.)
+#
+# This drops a CIL module and a oneshot unit that runs `semodule -i` on boot so
+# the grant survives reboots and new nodes. `semodule -i` is idempotent. The rule
+# is the minimal grant that fixes the denial (the non-fatal remount-on-device_t
+# denials bwrap emits are tolerated by bwrap and need no rule).
+#
+# Targets the worker pool (where GPU dev pods run). Live-installed on all current
+# nodes out-of-band via `semodule -i` so it took effect without a reboot; this MC
+# only makes it persistent. See GitHub issue #15.
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 99-container-devpts-mount-selinux
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+        - path: /etc/selinux/targeted/container-devpts-mount.cil
+          mode: 0644
+          overwrite: true
+          contents:
+            # (allow container_t devpts_t (filesystem (mount)))
+            source: data:text/plain;charset=utf-8;base64,KGFsbG93IGNvbnRhaW5lcl90IGRldnB0c190IChmaWxlc3lzdGVtIChtb3VudCkpKQo=
+    systemd:
+      units:
+        - name: container-devpts-mount-selinux.service
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Install container_t devpts mount SELinux module
+            After=local-fs.target
+            Before=crio.service kubelet.service
+            ConditionPathExists=/etc/selinux/targeted/container-devpts-mount.cil
+
+            [Service]
+            Type=oneshot
+            RemainAfterExit=yes
+            ExecStart=/usr/sbin/semodule -i /etc/selinux/targeted/container-devpts-mount.cil
+
+            [Install]
+            WantedBy=multi-user.target
