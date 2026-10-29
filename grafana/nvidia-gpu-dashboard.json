@@ -118,7 +118,7 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "label_replace((DCGM_FI_PROF_GR_ENGINE_ACTIVE{GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) gpu_claim_pod) * 100, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "expr": "label_replace((DCGM_FI_PROF_GR_ENGINE_ACTIVE{GPU_I_PROFILE=\"\"} * on(UUID) group_left(exported_namespace, exported_pod) max by (UUID, exported_namespace, exported_pod) (gpu_claim_pod)) * 100, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -327,8 +327,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "label_replace(DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"} * 100, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
-          "legendFormat": "GPU {{gpu}} @ {{node}}",
+          "expr": "label_replace((DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"} * on(UUID) group_left(exported_namespace) max by (UUID, exported_namespace) (gpu_claim_pod) * 100) or (label_replace(DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE=\"\", Hostname=~\".*$node\"} * 100, \"exported_namespace\", \"unclaimed\", \"\", \"\") unless on(UUID) gpu_claim_pod), \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} @ {{node}} — {{exported_namespace}}",
           "refId": "A"
         },
         {
@@ -336,8 +336,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "label_replace(DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"} * 100, \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
-          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} @ {{node}}",
+          "expr": "label_replace((DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"} * on(UUID) group_left(exported_namespace) max by (UUID, exported_namespace) (gpu_claim_pod) * 100) or (label_replace(DCGM_FI_PROF_GR_ENGINE_ACTIVE{gpu=~\"$gpu\", GPU_I_PROFILE!=\"\", Hostname=~\".*$node\"} * 100, \"exported_namespace\", \"unclaimed\", \"\", \"\") unless on(UUID) gpu_claim_pod), \"node\", \"$1\", \"Hostname\", \".*-([^-]+)\")",
+          "legendFormat": "GPU {{gpu}} MIG {{GPU_I_ID}} {{GPU_I_PROFILE}} @ {{node}} — {{exported_namespace}}",
           "refId": "B"
         }
       ]

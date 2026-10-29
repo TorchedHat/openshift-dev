@@ -92,7 +92,14 @@ def render(data, uuids):
         "# HELP gpu_claim_pod DRA-allocated NVIDIA GPU -> owning pod (value always 1).",
         "# TYPE gpu_claim_pod gauge",
     ]
-    seen = set()
+    # Aggregate by UUID so we emit EXACTLY ONE series per physical GPU. The dashboard joins
+    # `... * on(UUID) group_left(...) gpu_claim_pod`, and group_left requires gpu_claim_pod to
+    # be unique per UUID. A GPU can legitimately be held by >1 pod -- multiple reservedFor
+    # entries (e.g. an old pod still draining alongside its replacement) or >1 claim allocating
+    # the same device -- and emitting a series per pod makes UUID non-unique, which fails the
+    # whole panel with "many-to-many matching not allowed" for EVERY user, not just the one who
+    # triggered it. So a shared GPU collapses to a single sentinel row instead.
+    by_uuid = {}   # uuid -> {"node", "gpu", "owners": set((ns, pod))}
     for c in data.get("items", []):
         ns = c["metadata"]["namespace"]
         status = c.get("status") or {}
@@ -112,15 +119,23 @@ def render(data, uuids):
             uuid = uuids.get((node, device))
             if not uuid:
                 continue                     # no UUID -> can't join to DCGM; skip (see docstring)
+            entry = by_uuid.setdefault(uuid, {"node": node, "gpu": gpu, "owners": set()})
             for pod in pods:
-                key = (node, gpu, ns, pod)
-                if key in seen:
-                    continue
-                seen.add(key)
-                lines.append(
-                    f'gpu_claim_pod{{Hostname="{node}",gpu="{gpu}",UUID="{uuid}",'
-                    f'exported_namespace="{ns}",exported_pod="{pod}"}} 1'
-                )
+                entry["owners"].add((ns, pod))
+
+    for uuid, e in by_uuid.items():
+        owners = sorted(e["owners"])
+        if len(owners) == 1:
+            ns, pod = owners[0]
+        else:
+            # GPU shared by multiple pods: one unambiguous row keeps the join valid.
+            namespaces = {o[0] for o in owners}
+            ns = next(iter(namespaces)) if len(namespaces) == 1 else "<multiple>"
+            pod = f"<shared:{len(owners)}>"
+        lines.append(
+            f'gpu_claim_pod{{Hostname="{e["node"]}",gpu="{e["gpu"]}",UUID="{uuid}",'
+            f'exported_namespace="{ns}",exported_pod="{pod}"}} 1'
+        )
     return "\n".join(lines) + "\n"
 
 
