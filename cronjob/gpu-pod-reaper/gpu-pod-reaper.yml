@@ -1,0 +1,107 @@
+# gpu-pod-reaper — delete GPU-consuming workloads older than their TTL (default 24h).
+#
+# The reaper logic lives in reaper.py (the single source of truth). Its ServiceAccount source
+# ConfigMap is generated from that file at deploy time (see README), so this manifest does NOT
+# embed the script. The companion admin-lock (ValidatingAdmissionPolicy) is in gpu-pod-ttl-lock.yml.
+#
+# SHAPE: CronJob, every 15 min. Each run lists GPU pods cluster-wide, walks each to its root owner
+# (Deployment/StatefulSet/Job/bare Pod), and deletes owners older than their TTL. Longevity is the
+# `gpu-reaper.rhperfscale.org/ttl` annotation (admin-only; 24h default; `never` to exempt).
+#
+# SAFETY: DRY_RUN gates deletion. When "true" it only logs what it WOULD delete. This cluster runs
+# ARMED (DRY_RUN=false) — reviewed against a dry run first. To disarm, set DRY_RUN=true (edit below
+# or `oc -n skpark-rh set env cronjob/gpu-pod-reaper DRY_RUN=true`). Exempt a workload instead with
+# an admin `gpu-reaper.rhperfscale.org/ttl: "never"` annotation (VAP-locked; see gpu-pod-ttl-lock.yml).
+#
+# APPLY:    (see README — create the configmap from reaper.py first) then oc apply -f this file
+# RUN NOW:  oc -n skpark-rh create job gpu-pod-reaper-manual --from=cronjob/gpu-pod-reaper
+# LOGS:     oc -n skpark-rh logs -l app=gpu-pod-reaper --prefix --tail=-1
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gpu-pod-reaper
+  namespace: skpark-rh
+---
+# Cluster-wide read of pods + their owners, and delete of the workload kinds we reap.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gpu-pod-reaper
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "replicationcontrollers"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gpu-pod-reaper
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gpu-pod-reaper
+subjects:
+  - kind: ServiceAccount
+    name: gpu-pod-reaper
+    namespace: skpark-rh
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gpu-pod-reaper
+  namespace: skpark-rh
+  labels:
+    app: gpu-pod-reaper
+spec:
+  schedule: "0 * * * *"            # hourly; TTL granularity is coarse so this is plenty
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600
+      activeDeadlineSeconds: 300
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: gpu-pod-reaper
+          # This workload must itself survive the reaper. It is in an excluded namespace and uses
+          # no GPU, so it is never a target — but annotate it 'never' as belt-and-suspenders.
+          annotations:
+            gpu-reaper.rhperfscale.org/ttl: "never"
+        spec:
+          serviceAccountName: gpu-pod-reaper
+          restartPolicy: Never
+          containers:
+            - name: reaper
+              image: registry.access.redhat.com/ubi9/python-312:latest   # public; pure stdlib
+              imagePullPolicy: IfNotPresent
+              command: ["python", "/app/reaper.py"]
+              env:
+                - name: DEFAULT_TTL_HOURS
+                  value: "24"
+                - name: DRY_RUN
+                  value: "false"             # ARMED — deletes expired GPU workloads (see SAFETY above)
+              volumeMounts:
+                - name: src
+                  mountPath: /app
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 256Mi
+          volumes:
+            - name: src
+              configMap:
+                name: gpu-pod-reaper-src

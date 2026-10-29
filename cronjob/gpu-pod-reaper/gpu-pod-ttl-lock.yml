@@ -1,0 +1,131 @@
+# gpu-pod-ttl-lock — admin-only enforcement of the reaper longevity annotation.
+#
+# The gpu-pod-reaper reads `gpu-reaper.rhperfscale.org/ttl` to decide how long a GPU workload lives
+# (default 24h; `never` exempts). Without this lock any user could annotate their own pod and opt
+# out of GC. These ValidatingAdmissionPolicies deny setting / changing / removing that annotation
+# unless the requester is a cluster admin.
+#
+# WHO IS ADMIN (reuse of existing cluster-admin, per design): the `system:masters` /
+# `system:cluster-admins` groups, plus the two users bound to the cluster-admin ClusterRole
+# (skpark-rh, qqaatw), plus system:admin / kube:admin. To change the admin set, edit the `isAdmin`
+# variable below and re-apply. (The current list was derived from the cluster-admin
+# ClusterRoleBindings.)
+#
+# TWO POLICIES, because the annotation lives in two places:
+#   * on bare Pods                    -> object.metadata.annotations
+#   * in workload pod templates       -> object.spec.template.metadata.annotations
+#     (Deployment/StatefulSet/DaemonSet/ReplicaSet/Job). This stops a user from smuggling the
+#     annotation in via a controller: the user's CREATE of the Deployment is checked here, while the
+#     pods the controllers then spawn (as kube-system service accounts) are allowed to carry it.
+#
+# failurePolicy: Fail — this is an auth control; do not fail open. The CEL is simple and guarded.
+# APPLY: oc apply -f gpu-pod-ttl-lock.yml
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: gpu-pod-ttl-lock-pods
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  variables:
+    - name: isAdmin
+      expression: >-
+        'system:masters' in request.userInfo.groups ||
+        'system:cluster-admins' in request.userInfo.groups ||
+        request.userInfo.username in ['system:admin', 'kube:admin', 'skpark-rh', 'qqaatw']
+    - name: isController
+      expression: >-
+        request.userInfo.username.startsWith('system:serviceaccount:kube-system:') ||
+        request.userInfo.username == 'system:kube-controller-manager'
+    - name: newTtl
+      expression: >-
+        has(object.metadata.annotations) && 'gpu-reaper.rhperfscale.org/ttl' in object.metadata.annotations
+          ? object.metadata.annotations['gpu-reaper.rhperfscale.org/ttl'] : ''
+    - name: oldTtl
+      expression: >-
+        request.operation == 'UPDATE' && oldObject != null && has(oldObject.metadata.annotations)
+          && 'gpu-reaper.rhperfscale.org/ttl' in oldObject.metadata.annotations
+          ? oldObject.metadata.annotations['gpu-reaper.rhperfscale.org/ttl'] : ''
+  validations:
+    - expression: "variables.isAdmin || variables.isController || variables.newTtl == variables.oldTtl"
+      messageExpression: >-
+        "'gpu-reaper.rhperfscale.org/ttl' (GPU pod longevity) can only be set or changed by cluster admins; got '" +
+        variables.newTtl + "'"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: gpu-pod-ttl-lock-pods
+spec:
+  policyName: gpu-pod-ttl-lock-pods
+  validationActions: ["Deny"]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: gpu-pod-ttl-lock-workloads
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs"]
+  variables:
+    - name: isAdmin
+      expression: >-
+        'system:masters' in request.userInfo.groups ||
+        'system:cluster-admins' in request.userInfo.groups ||
+        request.userInfo.username in ['system:admin', 'kube:admin', 'skpark-rh', 'qqaatw']
+    - name: isController
+      expression: >-
+        request.userInfo.username.startsWith('system:serviceaccount:kube-system:') ||
+        request.userInfo.username == 'system:kube-controller-manager'
+    # The reaper reads the TTL from the workload's OWN metadata AND from its pod template, so both
+    # must be locked (a user has `edit` and could otherwise annotate their Deployment's metadata).
+    - name: newTtlTmpl
+      expression: >-
+        has(object.spec.template.metadata.annotations)
+          && 'gpu-reaper.rhperfscale.org/ttl' in object.spec.template.metadata.annotations
+          ? object.spec.template.metadata.annotations['gpu-reaper.rhperfscale.org/ttl'] : ''
+    - name: oldTtlTmpl
+      expression: >-
+        request.operation == 'UPDATE' && oldObject != null
+          && has(oldObject.spec.template.metadata.annotations)
+          && 'gpu-reaper.rhperfscale.org/ttl' in oldObject.spec.template.metadata.annotations
+          ? oldObject.spec.template.metadata.annotations['gpu-reaper.rhperfscale.org/ttl'] : ''
+    - name: newTtlMeta
+      expression: >-
+        has(object.metadata.annotations) && 'gpu-reaper.rhperfscale.org/ttl' in object.metadata.annotations
+          ? object.metadata.annotations['gpu-reaper.rhperfscale.org/ttl'] : ''
+    - name: oldTtlMeta
+      expression: >-
+        request.operation == 'UPDATE' && oldObject != null && has(oldObject.metadata.annotations)
+          && 'gpu-reaper.rhperfscale.org/ttl' in oldObject.metadata.annotations
+          ? oldObject.metadata.annotations['gpu-reaper.rhperfscale.org/ttl'] : ''
+  validations:
+    - expression: >-
+        variables.isAdmin || variables.isController ||
+        (variables.newTtlTmpl == variables.oldTtlTmpl && variables.newTtlMeta == variables.oldTtlMeta)
+      messageExpression: >-
+        "'gpu-reaper.rhperfscale.org/ttl' (GPU pod longevity) can only be set or changed by cluster admins; got '" +
+        variables.newTtlTmpl + "'/'" + variables.newTtlMeta + "'"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: gpu-pod-ttl-lock-workloads
+spec:
+  policyName: gpu-pod-ttl-lock-workloads
+  validationActions: ["Deny"]
