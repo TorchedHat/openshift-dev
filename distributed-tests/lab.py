@@ -41,14 +41,6 @@ PULL_SECRET = "rh-ee-sampark-dev-bot-pull-secret"
 SA = "torch-cross-node"                          # carries the hostnetwork-anyuid SCC (UID 1000 + IPC_LOCK)
 ENTRYPOINT_CM = "torch-cross-node-entrypoint-podnet"
 
-# Per-pod sizing for the lab, keyed by bucket. The TrainingRuntime bakes its own sizing for
-# TrainJobs; the lab Deployment needs its own.
-LAB_SIZING = {
-    "2gpu": dict(cpu_req="8",  cpu_lim="16", mem_req="64Gi",  mem_lim="128Gi"),
-    "4gpu": dict(cpu_req="8",  cpu_lim="16", mem_req="64Gi",  mem_lim="128Gi"),
-    "8gpu": dict(cpu_req="16", cpu_lim="32", mem_req="128Gi", mem_lim="256Gi"),
-}
-
 
 def default_pvc(ns):
     # Mirrors setup-orchestrator.py: the per-namespace dev PVC (NVSHMEM-enabled torch at /home/devuser).
@@ -209,22 +201,27 @@ def submit_lab(args, sj):
     """Stand up (or update) a persistent per-node NVSHMEM/IBGDA lab. `sj` is submit-job.py's module,
     passed in so we reuse its helpers/constants without importing it (avoids a circular import)."""
     ns = args.namespace or sj.prompt("Namespace", required=True)
-    bucket = args.bucket or sj.prompt("GPU bucket (2gpu/4gpu/8gpu)", default="2gpu")
-    if bucket not in sj.BUCKETS:
-        sys.exit(f"unknown bucket '{bucket}' (choices: {', '.join(sj.BUCKETS)})")
+    ngpus = args.ngpus
+    if ngpus not in sj.BUCKETS:
+        sys.exit(f"unknown num of gpus '{ngpus}' (choices: {', '.join(sj.BUCKETS)})")
     image = args.image or sj.prompt("Image", default=sj.IMAGE)
     lab_name = args.job_name or sj.prompt("Lab name", default="nvshmem-lab")
     pvc = args.pvc or default_pvc(ns)
     pull_secret = args.pull_secret or PULL_SECRET
     # One pod per node; the antiAffinity forces them apart, so replicas must equal the node count.
     replicas = args.replicas if args.replicas is not None else args.min_nodes
-    b = sj.BUCKETS[bucket]
+    b = sj.BUCKETS[ngpus]
     rct = b["rct"]
-    sizing = LAB_SIZING[bucket]
+    sizing = {
+        "cpu_req": b["cpu_req"],
+        "cpu_lim": b["cpu_lim"],
+        "mem_req": b["mem_req"],
+        "mem_lim": b["mem_lim"]
+    }
 
     sj.info(f"\nLab plan{' (dry-run)' if args.dry_run else ''}:")
     sj.info(f"  namespace   {ns}")
-    sj.info(f"  bucket      {bucket}  ({b['gpus']} GPU/pod, RCT {rct})")
+    sj.info(f"  gpus        {ngpus}  ({ngpus} GPU/pod, RCT {rct})")
     sj.info(f"  image       {image}")
     sj.info(f"  pull secret {pull_secret}")
     sj.info(f"  PVC         {pvc}  ->  /home/devuser")
@@ -284,7 +281,7 @@ def submit_lab(args, sj):
     sj.info(f"\nWatch:  oc -n {ns} get pods -l {sel} -o wide -w")
     sj.info(f"Shell:  oc -n {ns} exec -it {lab_name}-0 -- bash        # rank-0 (master); -1 for rank-1")
     sj.info(f"Run:    /opt/rz/entrypoint.sh <your_test.py> [args]     # PET_* already in the pod env")
-    sj.info(f"Clean:  ./submit-job.py -n {ns} --lab --destroy --job-name {lab_name} --bucket {bucket}")
+    sj.info(f"Clean:  ./submit-job.py -n {ns} --lab --destroy --job-name {lab_name} --ngpus {ngpus}")
 
 
 def destroy_lab(args, sj):
@@ -298,17 +295,17 @@ def destroy_lab(args, sj):
     per-pod ResourceClaims are pod-owned and GC on termination. The RCT holds no devices but is
     deleted too so its stale pinned buses can't constrain the next lab. Idempotent."""
     ns = args.namespace or sj.prompt("Namespace", required=True)
-    bucket = args.bucket or sj.prompt("GPU bucket (2gpu/4gpu/8gpu)", default="2gpu")
-    if bucket not in sj.BUCKETS:
-        sys.exit(f"unknown bucket '{bucket}' (choices: {', '.join(sj.BUCKETS)})")
+    ngpus = args.ngpus
+    if ngpus not in sj.BUCKETS:
+        sys.exit(f"unknown bucket '{ngpus}' (choices: {', '.join(sj.BUCKETS)})")
     lab_name = args.job_name or sj.prompt("Lab name", default="nvshmem-lab")
-    rct = sj.BUCKETS[bucket]["rct"]
+    rct = sj.BUCKETS[ngpus]["rct"]
 
     sj.info(f"\nDestroy plan{' (dry-run)' if args.dry_run else ''}:")
     sj.info(f"  namespace   {ns}")
     sj.info(f"  StatefulSet {lab_name}")
     sj.info(f"  Service     {lab_name}  (headless)")
-    sj.info(f"  RCT         {rct}  (bucket {bucket})\n")
+    sj.info(f"  RCT         {rct}  (ngpus {ngpus})\n")
 
     if args.dry_run:
         sj.info(f"would run:  oc -n {ns} delete statefulset,deployment {lab_name} --ignore-not-found")
