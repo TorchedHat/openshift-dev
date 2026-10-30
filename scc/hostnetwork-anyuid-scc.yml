@@ -33,8 +33,10 @@ readOnlyRootFilesystem: false
 # The one difference from hostnetwork: allow any UID (pod requests runAsUser 1000)
 runAsUser:
   type: RunAsAny
+# RunAsAny so pods can set fsGroup: 0 (write a root-owned home); MustRunAs would
+# clamp it to the namespace GID range and reject 0.
 fsGroup:
-  type: MustRunAs
+  type: RunAsAny
 seLinuxContext:
   type: MustRunAs
 supplementalGroups:
