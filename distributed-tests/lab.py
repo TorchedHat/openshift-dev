@@ -130,6 +130,25 @@ spec:
       resourceClaims:
         - name: gpu
           resourceClaimTemplateName: {rct}
+      initContainers:
+        - name: init-container
+          image: {image}
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - /scripts/configure_data_dir.sh
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: pytorch-eco-data
+              mountPath: /mnt/data
+            - name: init-script
+              mountPath: /scripts
       containers:
         - name: lab
           image: {image}
@@ -187,6 +206,10 @@ spec:
         - name: pytorch-eco-data
           persistentVolumeClaim:
             claimName: {pvc}
+        - name: init-script
+          configMap:
+            name: init-script
+            defaultMode: 0755
         - name: entrypoint
           configMap:
             name: {ENTRYPOINT_CM}
