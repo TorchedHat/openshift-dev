@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""gpu-pod-reaper -- garbage-collect GPU workloads older than their TTL (default 24h).
+"""gpu-pod-reaper -- free GPUs held by pods running longer than their TTL (default 24h).
 
 WHY
 ---
 GPU nodes are scarce. Ephemeral test/experiment pods (e.g. the nccl-* RoCE pods) are routinely
 left Running for days, pinning whole GPUs via their DRA ResourceClaims and starving everyone else.
-This reaper puts a timer on every GPU-consuming workload: once it is older than its TTL it is
-deleted. Default TTL is 24h; it is overridable per-pod ONLY by cluster admins (see LONGEVITY).
+This reaper puts a timer on every GPU-consuming pod: once a pod has been up longer than its TTL,
+the reaper frees the GPU WITHOUT destroying the workload definition -- it scales the owning
+controller to 0 replicas (Deployment/StatefulSet/ReplicaSet/ReplicationController), suspends a Job,
+or deletes a bare Pod. The manifest stays; the owner can be scaled back up for another TTL window.
+Default TTL is 24h; it is overridable per-pod ONLY by cluster admins (see LONGEVITY).
 
 TARGET
 ------
@@ -16,11 +19,13 @@ A pod "consumes a GPU" when either:
 Only pods in NON-system namespaces are considered (see EXCLUDE_NS_RE). DaemonSet-owned pods are
 skipped -- they are node infra and would just respawn.
 
-We act on the pod's ROOT OWNER, not the pod itself: a Deployment/StatefulSet/ReplicaSet-backed
-pod would be instantly recreated if we deleted only the pod, so we walk ownerReferences up to the
-top controller (Deployment, StatefulSet, Job, ReplicationController) and delete THAT (cascading to
-its pods). A bare pod is its own root. Age is measured from the root owner's creationTimestamp, so
-a rollout that replaces pods does not reset the clock.
+We act on the pod's ROOT OWNER, not the pod itself: scaling/suspending the controller frees the
+GPU while keeping the object, whereas deleting just the pod would be instantly recreated. We walk
+ownerReferences up to the top controller (Deployment, StatefulSet, Job, ReplicationController) and
+scale/suspend THAT; a bare pod has no owner to preserve, so it is deleted. Age is the POD's uptime
+(not the owner's creation): since the owner persists after scale-to-0, using owner-age would make
+any >TTL workload un-runnable (knocked back to 0 within the hour). Pod-age caps each GPU session at
+TTL and starts a fresh window whenever the owner is scaled back up.
 
 LONGEVITY (admin-only)
 ----------------------
@@ -52,7 +57,10 @@ DRY_RUN = os.environ.get("DRY_RUN", "true").lower() not in ("false", "0", "no")
 # Namespaces the reaper never touches (cluster/infra). Override via EXCLUDE_NS_RE.
 EXCLUDE_NS_RE = re.compile(os.environ.get(
     "EXCLUDE_NS_RE",
-    r"^(openshift|kube-|kube$|default$|nvidia|gpu-operator|nfs-server|grafana|skpark-rh|"
+    # NOTE: skpark-rh (admin ns) is intentionally NOT excluded — its GPU dev pods obey the 24h TTL
+    # like everyone else. The reaper's own CronJob and the image-prewarmer there are non-GPU, so
+    # they are never targets.
+    r"^(openshift|kube-|kube$|default$|nvidia|gpu-operator|nfs-server|grafana|"
     r"open-cluster|hypershift|cert-manager|lvms|odf|rook|calico|tigera)",
 ))
 
@@ -94,6 +102,16 @@ def _req(url, method="GET"):
     with urllib.request.urlopen(r, context=_ctx(), timeout=30) as resp:
         body = resp.read()
     return json.loads(body) if body else {}
+
+
+def _patch(url, body):
+    data = json.dumps(body).encode()
+    r = urllib.request.Request(url, method="PATCH", data=data, headers={
+        "Authorization": f"Bearer {_token()}",
+        "Content-Type": "application/merge-patch+json",
+    })
+    with urllib.request.urlopen(r, context=_ctx(), timeout=30) as resp:
+        resp.read()
 
 
 def parse_ttl_hours(val):
@@ -160,23 +178,49 @@ def root_owner(pod, ns, cache):
         obj = cache[key]
 
 
-def delete(obj, ns):
+SCALABLE = ("Deployment", "StatefulSet", "ReplicaSet", "ReplicationController")
+
+
+def reap(obj, ns):
+    """Free the GPU while PRESERVING the workload definition. Controllers are scaled to 0
+    replicas (their manifest stays; pods are removed); Jobs are suspended (object kept, active
+    pods terminated); only a BARE Pod is deleted outright (it has no owning object to preserve).
+    Returns True if an action was taken, False for a no-op (already idle). Honors DRY_RUN."""
     kind = obj.get("kind", "Pod")
     g, v, plural = KIND_RES.get(kind, ("", "v1", "pods"))
     name = obj["metadata"]["name"]
-    url = _url(g, v, plural, ns, name) + "?propagationPolicy=Background"
+    spec = obj.get("spec") or {}
+    if kind in SCALABLE:
+        if spec.get("replicas") == 0:
+            print(f"  already at 0 replicas: {kind}/{name}", flush=True)
+            return False
+        action, patch = f"scale {kind}/{name} to 0 replicas", {"spec": {"replicas": 0}}
+    elif kind == "Job":
+        if spec.get("suspend") is True:
+            print(f"  already suspended: Job/{name}", flush=True)
+            return False
+        action, patch = f"suspend Job/{name}", {"spec": {"suspend": True}}
+    else:                                        # bare Pod (or unknown): nothing to preserve
+        action = f"delete {kind}/{name}"
+        if DRY_RUN:
+            print(f"  DRY_RUN would {action}", flush=True)
+            return True
+        _req(_url(g, v, plural, ns, name) + "?propagationPolicy=Background", method="DELETE")
+        print(f"  REAPED: {action}", flush=True)
+        return True
     if DRY_RUN:
-        print(f"  DRY_RUN would delete {kind}/{name}", flush=True)
-        return
-    _req(url, method="DELETE")
-    print(f"  DELETED {kind}/{name}", flush=True)
+        print(f"  DRY_RUN would {action}", flush=True)
+        return True
+    _patch(_url(g, v, plural, ns, name), patch)
+    print(f"  REAPED: {action}", flush=True)
+    return True
 
 
 def main():
     print(f"gpu-pod-reaper start  default_ttl={DEFAULT_TTL_HOURS}h  dry_run={DRY_RUN}", flush=True)
     pods = _req(f"{API}/api/v1/pods").get("items", [])
     cache = {}                                 # (kind,ns,name) -> object
-    roots_handled = set()                      # don't delete the same owner twice
+    roots_handled = set()                      # act on / exempt each owner at most once
     reaped = scanned = 0
     for pod in pods:
         ns = pod["metadata"]["namespace"]
@@ -187,27 +231,31 @@ def main():
         rkind = root.get("kind", "Pod")
         if rkind == "DaemonSet":
             continue                           # node infra; would respawn
-        rname = root["metadata"]["name"]
-        rkey = (rkind, ns, rname)
+        rkey = (rkind, ns, root["metadata"]["name"])
         if rkey in roots_handled:
             continue
-        roots_handled.add(rkey)
         # TTL: pod annotation wins, else root-owner annotation, else default.
         ann = (pod["metadata"].get("annotations") or {}).get(ANNOTATION)
         if ann is None:
             ann = (root["metadata"].get("annotations") or {}).get(ANNOTATION)
         ttl = parse_ttl_hours(ann)
-        age = age_hours(root)
-        label = f"{ns}/{rkind}/{rname}"
+        # Age is the POD's uptime, not the owner's creation: with scale-to-0 the owner persists,
+        # so owner-age would make any >TTL workload un-runnable (scaled back to 0 within the hour).
+        # Pod-age caps a GPU session at TTL and gives a fresh window each time it's scaled back up.
+        age = age_hours(pod)
+        pname = pod["metadata"]["name"]
+        label = f"{ns}/{rkind}/{root['metadata']['name']}"
         if ttl is None:
-            print(f"  exempt (ttl=never) {label}  age={age:.1f}h", flush=True)
+            print(f"  exempt (ttl=never) {label}", flush=True)
+            roots_handled.add(rkey)
             continue
         if age > ttl:
-            print(f"  EXPIRED {label}  age={age:.1f}h > ttl={ttl:.1f}h", flush=True)
-            delete(root, ns)
-            reaped += 1
+            print(f"  EXPIRED {label}  pod={pname} age={age:.1f}h > ttl={ttl:.1f}h", flush=True)
+            if reap(root, ns):
+                reaped += 1
+            roots_handled.add(rkey)           # only mark handled once we've acted
         else:
-            print(f"  keep {label}  age={age:.1f}h <= ttl={ttl:.1f}h", flush=True)
+            print(f"  keep {label}  pod={pname} age={age:.1f}h <= ttl={ttl:.1f}h", flush=True)
     print(f"gpu-pod-reaper done  gpu_pods={scanned}  reaped={reaped}", flush=True)
 
 

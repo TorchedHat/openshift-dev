@@ -1,14 +1,21 @@
 # gpu-pod-reaper
 
-Garbage-collects GPU workloads after a TTL (default **24h**). Longevity is admin-only.
+Frees GPUs held by pods running longer than a TTL (default **24h**). Longevity is admin-only.
 
 ## What it does
 
 A CronJob in `skpark-rh` runs hourly, finds pods that consume a GPU
-(DRA `spec.resourceClaims` or `nvidia.com/gpu`) in non-system namespaces, walks each to its
-**root owner** (Deployment/StatefulSet/Job/bare Pod), and deletes owners older than their TTL.
-Age is measured from the owner's `creationTimestamp` (so rollouts don't reset the clock).
-DaemonSet-owned and system-namespace pods are skipped.
+(DRA `spec.resourceClaims` or `nvidia.com/gpu`) in non-system namespaces, and for any pod whose
+**uptime** exceeds its TTL, frees the GPU **without destroying the workload**:
+
+- **Deployment / StatefulSet / ReplicaSet / ReplicationController** → scaled to **0 replicas** (the
+  manifest stays; scale it back up for another TTL window).
+- **Job** → **suspended** (`spec.suspend: true`; object kept, active pods terminated).
+- **bare Pod** → deleted (nothing to preserve).
+
+Age is the **pod's** uptime, not the owner's creation date — so once scaled back up, a workload
+gets a fresh TTL window rather than being knocked straight back to 0. DaemonSet-owned and
+system-namespace pods are skipped.
 
 ## Files
 
