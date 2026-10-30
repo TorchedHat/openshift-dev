@@ -3,19 +3,31 @@
 
 WHAT THIS DOES
 --------------
-Interactive front door for launching one cross-node job. It asks for the few things that vary per
-run (namespace, test-script path, GPU bucket, image, job name), then does the whole launch:
+Front door for launching one cross-node job. It asks for the few things that vary per run (namespace,
+upstream test module, GPUs/node, image, job name), then does the whole launch:
 
-  1. publishes your test script as the `cross-node-test` ConfigMap (mounted at /workspace)
-  2. runs the DRA pre-flight bus-picker: finds a set of GPU bus IDs mutually free on >=2 nodes and
+  1. resolves --pytorch-ref -> a concrete SHA (git ls-remote) so every node builds the SAME commit,
+     and pins TestHarness to the commit you have installed locally (see TESTHARNESS below)
+  2. syncs the build-script ConfigMap (torch-cross-node-build-script) when the local file differs
+  3. encodes the harness selection (module/ngpus/nodes) into the MP_B64/MPC_B64 env vars
+  4. runs the DRA pre-flight bus-picker: finds a set of GPU bus IDs mutually free on >=2 nodes and
      (re)stamps the bucket's symmetric ResourceClaimTemplate so BOTH node pods pin the SAME buses
      -> same physical board -> same PIX mlx5 rail -> symmetric by construction
-  3. renders + applies a namespaced TrainJob referencing the namespaced TrainingRuntime
-     (torch-cross-node-<bucket>) that setup-orchestrator.py installed
-  4. prints the watch/logs commands
+  5. renders + applies a namespaced TrainJob referencing the build-at-run TrainingRuntime
+     (torch-xnode-<ngpus>gpu) that setup-orchestrator.py installed; the pod clones+builds torch from
+     --pytorch-repo@<SHA>, installs TestHarness, then runs the module under torchrun
+  6. prints the watch/logs commands
 
-The runtime it targets is the namespaced TrainingRuntime, and everything is derived from --namespace,
-so any namespace can submit jobs against its own dev PVC.
+Everything is derived from --namespace, so any namespace can submit jobs against its own objects.
+
+TESTHARNESS (pinned, tracks a moving tag)
+-----------------------------------------
+TestHarness must be installed locally (pip install -r requirements.txt pins it to the `stable` tag of
+skpark-rh/TestHarness). submit-job reads the exact commit it resolved to (PEP 610 direct_url.json) and
+injects THAT commit as TH_REF into the TrainJob, so the pod builds the identical TestHarness you have
+-> local and pod can't drift within a run. It also warns (non-fatally) when the remote `stable` has
+moved past your installed commit, and prints how to update. If TestHarness is an editable/non-VCS
+install (no resolvable commit), it falls back to building `stable` in the pod and says so.
 
 PERSISTENT LAB (--lab)
 ----------------------
@@ -26,9 +38,9 @@ the dev PVC at /home/devuser. The StatefulSet + Service give stable pod DNS, so 
 env (PET_MASTER_ADDR/PET_NNODES/PET_NPROC_PER_NODE, + PET_NODE_RANK from the pod ordinal) is baked
 into the pods -- exec in and `/opt/rz/entrypoint.sh <test.py>` just works. The lab-specific logic
 lives in lab.py.
-    ./submit-job.py -n <ns> --lab --bucket 2gpu
+    ./submit-job.py -n <ns> --lab --ngpus 2
 Tear it down cleanly (deletes the StatefulSet, Service AND the stamped RCT, freeing the GPUs):
-    ./submit-job.py -n <ns> --lab --destroy --bucket 2gpu
+    ./submit-job.py -n <ns> --lab --destroy --ngpus 2
 
 PREREQUISITE: run  ./setup-orchestrator.py --namespace <ns>  once for the namespace first.
 
@@ -38,40 +50,49 @@ Run with no flags for guided prompts (each shows a default in [brackets]; Enter 
     ./submit-job.py
 Pass flags to skip the matching prompt; pass enough flags and it runs fully non-interactively
 (good for CI / repeat runs):
-    ./submit-job.py -n <namespace> --script ../nvshmem/test_symmem_internode.py --bucket 4gpu --yes
+    ./submit-job.py -n <namespace> --pytorch-repo https://github.com/<you>/pytorch.git \
+        --pytorch-ref my-branch --module test_nvshmem --ngpus 2 --yes
 
 FLAGS
 -----
   -n/--namespace   target namespace                 (prompted; no default)
-  --script         path to launcher-style test .py  (prompted; no default)
-  --bucket         2gpu | 4gpu | 8gpu               (prompted; default 2gpu)
-  --image          dev container image              (prompted; default quay.io/.../py3.10)
-  --pvc            dev PVC mounted at /home/devuser (default pytorch-py3-10-<ns>). Override when
-                   your python/torch build lives elsewhere, e.g. the legacy pytorch-ibmc-storage-<ns>.
-  --pull-secret    image pull secret override. TrainJob: overrides the secret baked into the
-                   TrainingRuntime (via podTemplateOverrides); --lab: overrides the lab default.
-                   Omit to inherit the runtime/lab default.
-  --job-name       TrainJob name                    (prompted; default symmem-<bucket>)
-  --script-args    extra args passed to your script after its path (space-separated)
+  --module         upstream PyTorch distributed test module, e.g. test_nvshmem  (prompted)
+  --ngpus          GPUs per node, 1..8              (prompted; default 2)
+  --pytorch-repo   PyTorch git URL to clone/build (most likely your fork)
+  --pytorch-ref    PyTorch branch/tag/SHA to build (resolved once to a pinned SHA)
+  --image          dev container image              (default quay.io/.../py3.11-cuda13.0)
+  --job-name       TrainJob name                    (prompted; default xnode-test-<nodes>n-<ngpus>g)
   --min-nodes      buses must be mutually free on >= N nodes  (default 2)
   --buckets-order  comma bus-ID priority order for the picker  (default: all, sorted)
+  --pvc            dev PVC override (podTemplateOverrides); used by --lab
+  --pull-secret    image pull secret override (podTemplateOverrides); used by --lab
   --dry-run        show the free-GPU matrix + the pick + rendered TrainJob; change nothing
   --yes/-y         don't prompt to confirm before launching
+  --lab            stand up a persistent per-node lab (StatefulSet + headless Service) instead
+  --destroy        [--lab] tear the lab down (StatefulSet + Service + stamped RCT)
+  --replicas       [--lab] lab pod count (default --min-nodes; one pod per node)
+  --ucx            [--lab] inject UCX RDMA env (UCX_TLS + UCX_NET_DEVICES=<IB_DEV>:1)
 """
 import argparse
+import importlib.metadata as im
 import json
 import os
 import subprocess
 import sys
 import uuid
 from itertools import combinations
-
-from testharness import config
 from utils import BUCKETS, runtime_name
 
 IMAGE = "quay.io/rh-ee-sampark/devcontainers:py3.11-cuda13.0"
 DEV_PVC_VOLUME = "pytorch-eco-data"  # the runtime's dev-home volume (mounted at /home/devuser);
                                      # re-declare it in podTemplateOverrides to swap the PVC
+TH_REPO = "https://github.com/skpark-rh/TestHarness.git"
+TH_TRACK = "stable"
+TH_UPDATE_CMD = "pip install -U --force-reinstall -r distributed-tests/requirements.txt"
+try:
+    from testharness import config
+except ModuleNotFoundError:
+    sys.exit(f"TestHarness not installed - run:\n   {TH_UPDATE_CMD}")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -93,6 +114,26 @@ def norm_bus(x):
     """Accept 'e0' or '0000:e0:00.0' -> '0000:e0:00.0'."""
     x = x.strip()
     return x if ":" in x and x.startswith("0000:") else f"0000:{x}:00.0"
+
+
+def installed_th_commit():
+    """Exact commit of the locally-installed testharness."""
+    raw = im.distribution("testharness").read_text("direct_url.json")
+    if not raw:
+        return None
+    return (json.loads(raw).get("vcs_info") or {}).get("commit_id")
+
+
+def remote_th_commit(repo, ref):
+    """Commit the tracked ref currently pointing to on the remote."""
+    out = sh("git", "ls-remote", repo, ref, f"{ref}^{{}}", check=False)
+    lines = [l for l in out.splitlines() if l.strip()]
+    if not lines:
+        return None
+    # An annotated tag yields two lines. The tag object and `<ref>^{}` => which deferences to the commit it refers to.
+    # Use the dereferenced line to do a fair comparison.
+    deref = [l for l in lines if l.endswith("^{}")]
+    return (deref[0] if deref else lines[0]).split()[0]
 
 
 # ---- interactive helpers ---------------------------------------------------------------------
@@ -222,6 +263,7 @@ def trainjob_yaml(
         repo,
         ref,
         sha,
+        th_ref,
         build_id,
         pvc=None,
         pull_secret=None
@@ -282,6 +324,8 @@ spec:
                 value: {ref}
               - name: TORCH_SHA
                 value: {sha}
+              - name: TH_REF
+                value: {th_ref}
               - name: BUILD_ID
                 value: {build_id}
               - name: NNODES
@@ -305,6 +349,7 @@ def run(
         repo,
         ref,
         sha,
+        th_ref,
         build_id,
         dry_run,
         yes
@@ -313,7 +358,7 @@ def run(
     # 1. Pick symmetric buses (always shown)
     buses = pick_buses(ngpus, min_nodes, buckets_order)
     tj = trainjob_yaml(job_name, ns, min_nodes, ngpus, image, mp_b64, mpc_b64,
-                       repo, ref, sha, build_id,
+                       repo, ref, sha, th_ref, build_id,
                        pvc=pvc, pull_secret=pull_secret)
 
     if dry_run:
@@ -389,9 +434,10 @@ def main():
                     help="stand up a persistent per-node NVSHMEM/IBGDA lab (StatefulSet + headless "
                          "Service) instead of a TrainJob")
     ap.add_argument("--pvc", default=None,
-                    help="dev PVC to mount at /home/devuser, overriding the runtime default "
-                         "(pytorch-py3-10-<ns>). Use when your python/torch build lives in a "
-                         "different PVC, e.g. the legacy pytorch-ibmc-storage-<ns>. Also used by --lab.")
+                    help="dev PVC mounted at /home/devuser. For --lab this is the dev PVC the lab "
+                         "mounts (defaults to pytorch-py3-11-<ns>). For a TrainJob it is an OPT-IN "
+                         "override only -- the build-at-run runtime builds torch fresh and mounts no "
+                         "dev PVC, so omit it unless you have a runtime that mounts one.")
     ap.add_argument("--pull-secret", default=None,
                     help="image pull secret override. For a TrainJob it overrides the secret baked "
                          "into the TrainingRuntime (via podTemplateOverrides); for --lab it overrides "
@@ -424,13 +470,15 @@ def main():
     image = args.image
     job_name = args.job_name or prompt("TrainJob name", default=f"xnode-test-{min_nodes}n-{ngpus}g")
     b = BUCKETS[ngpus]
+    pvc = args.pvc           # TrainJob: opt-in override only (build-at-run mounts no dev PVC); --lab defaults it
 
     info(f"\nSubmit plan{' (dry-run)' if args.dry_run else ''}:")
     info(f"  namespace   {ns}")
     info(f"  module      {mod}  ->  {mod_basename}")
     info(f"  total gpus    {ngpus * min_nodes}  ({b['gpus']} GPU/pod x {min_nodes} nodes, RCT {b['rct']})")
     info(f"  image       {image}")
-    info(f"  dev PVC     {args.pvc or f'pytorch-py3-10-{ns} (runtime default)'}")
+    if pvc:
+        info(f"  dev PVC     {pvc} (override)")
     info(f"  pull secret {args.pull_secret or '(runtime default)'}")
     info(f"  TrainJob    {job_name}\n")
 
@@ -445,7 +493,6 @@ def main():
     ensure_build_script_cm(ns=ns, dry_run=args.dry_run)
 
     buckets_order = args.buckets_order
-    pvc = args.pvc
     pull_secret = args.pull_secret
     dry_run = args.dry_run
     yes = args.yes
@@ -454,6 +501,18 @@ def main():
     ref = args.pytorch_ref
     sha = sh("git", "ls-remote", repo, ref).split()[0]
     build_id = f"{job_name}-{sha[:12]}-{uuid.uuid4().hex[:8]}"
+
+    th_commit = installed_th_commit()
+    th_latest = remote_th_commit(TH_REPO, TH_TRACK)
+    if th_commit and th_latest and th_commit != th_latest:
+        info(f"Note: newer TestHarness '{TH_TRACK}' available "
+             f"({th_latest[:12]}); you are on {th_commit[:12]}")
+        info(f"        update with:   {TH_UPDATE_CMD}")
+
+    if th_commit is None:
+        info(f"Note: local TestHarness is an editable/non-VCS install; the pod will build "
+             f"'{TH_TRACK}', not your local tree. Push + track the tag for lockstep.")
+        th_commit = TH_TRACK
 
     cfg = config.HarnessConfig(
         module=mod.replace(".py", ""),
@@ -476,6 +535,7 @@ def main():
         repo=repo,
         ref=ref,
         sha=sha,
+        th_ref=th_commit,
         build_id=build_id,
         dry_run=dry_run,
         yes=yes
